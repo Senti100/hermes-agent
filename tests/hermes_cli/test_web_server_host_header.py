@@ -76,6 +76,40 @@ class TestHostHeaderValidator:
         # Loopback — reject (we bound to a specific non-loopback name)
         assert not _is_accepted_host("localhost", "my-server.corp.net")
 
+    def test_configured_public_url_host_is_accepted(self):
+        """A reverse-proxied dashboard may bind to a LAN IP while browsers
+        address it by its declared public hostname."""
+        from hermes_cli.web_server import _is_accepted_host
+
+        public_url = "https://dashboard.example.com/hermes"
+        assert _is_accepted_host(
+            "dashboard.example.com",
+            "192.0.2.44",
+            public_url=public_url,
+        )
+        assert _is_accepted_host(
+            "DASHBOARD.EXAMPLE.COM:443",
+            "192.0.2.44",
+            public_url=public_url,
+        )
+        assert not _is_accepted_host(
+            "dashboard.example.com.evil.test",
+            "192.0.2.44",
+            public_url=public_url,
+        )
+
+    def test_configured_public_url_origin_requires_scheme_host_and_port(self):
+        from hermes_cli.web_server import _origin_matches_public_url
+
+        public_url = "https://dashboard.example.com/hermes"
+        assert _origin_matches_public_url("https://dashboard.example.com", public_url)
+        assert _origin_matches_public_url("https://dashboard.example.com:443", public_url)
+        assert not _origin_matches_public_url("http://dashboard.example.com", public_url)
+        assert not _origin_matches_public_url(
+            "https://dashboard.example.com.evil.test",
+            public_url,
+        )
+
     def test_case_insensitive_comparison(self):
         """Host headers are case-insensitive per RFC — accept variations."""
         from hermes_cli.web_server import _is_accepted_host
@@ -124,6 +158,25 @@ class TestHostHeaderMiddleware:
             )
             # Either 200 (endpoint served) or some other non-400 —
             # just not the host-rejection 400
+            assert resp.status_code != 400 or (
+                "Invalid Host header" not in resp.json().get("detail", "")
+            )
+        finally:
+            if hasattr(app.state, "bound_host"):
+                del app.state.bound_host
+
+    def test_configured_public_host_request_accepted(self, monkeypatch):
+        from fastapi.testclient import TestClient
+        from hermes_cli.web_server import app
+
+        monkeypatch.setenv("HERMES_DASHBOARD_PUBLIC_URL", "https://dashboard.example.com")
+        app.state.bound_host = "192.0.2.44"
+        try:
+            client = TestClient(app)
+            resp = client.get(
+                "/api/status",
+                headers={"Host": "dashboard.example.com"},
+            )
             assert resp.status_code != 400 or (
                 "Invalid Host header" not in resp.json().get("detail", "")
             )
@@ -212,6 +265,30 @@ class TestWebSocketHostOriginGuard:
             headers={
                 "Host": "localhost:9119",
                 "Origin": "http://localhost:9119",
+            },
+        ):
+            pass
+
+    def test_public_url_websocket_origin_is_accepted_with_bound_ip_host(self, monkeypatch):
+        """Reverse proxies often send Host for the backend LAN IP while the
+        browser Origin stays on the public dashboard URL.  That exact shape
+        should pass when the public URL is configured."""
+        from fastapi.testclient import TestClient
+
+        import hermes_cli.web_server as ws
+
+        monkeypatch.setenv("HERMES_DASHBOARD_PUBLIC_URL", "https://dashboard.example.com")
+        monkeypatch.setattr(ws.app.state, "bound_host", "192.0.2.44", raising=False)
+        monkeypatch.setattr(ws.app.state, "auth_required", False, raising=False)
+        monkeypatch.setattr(ws, "_DASHBOARD_EMBEDDED_CHAT_ENABLED", True)
+
+        client = TestClient(ws.app)
+        url = f"/api/events?token={ws._SESSION_TOKEN}&channel=security-test"
+        with client.websocket_connect(
+            url,
+            headers={
+                "Host": "192.0.2.44:9119",
+                "Origin": "https://dashboard.example.com",
             },
         ):
             pass

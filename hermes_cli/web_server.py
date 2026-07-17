@@ -417,7 +417,101 @@ def should_require_auth(host: str, allow_public: bool = False) -> bool:
     return host not in _LOOPBACK_HOST_VALUES
 
 
-def _is_accepted_host(host_header: str, bound_host: str) -> bool:
+def _host_from_authority(authority: str) -> str:
+    """Return the lowercased host portion from a Host/authority value.
+
+    ``Host`` headers and URL netlocs may carry a port suffix.  IPv6 uses
+    bracket notation (``[::1]:9119``); dashboard bind hosts are stored without
+    brackets (``::1``).  This helper intentionally mirrors the historic
+    host-only comparison used by :func:`_is_accepted_host`.
+    """
+    value = (authority or "").strip()
+    if not value:
+        return ""
+    if value.startswith("["):
+        close = value.find("]")
+        if close != -1:
+            return value[1:close].lower()
+        return value.strip("[]").lower()
+    return value.rsplit(":", 1)[0].lower() if ":" in value else value.lower()
+
+
+def _public_url_host(public_url: Optional[str]) -> str:
+    """Return the host declared by ``dashboard.public_url`` / env, if valid."""
+    if not public_url:
+        return ""
+    try:
+        parsed = urllib.parse.urlparse(public_url)
+    except ValueError:
+        return ""
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    return (parsed.hostname or "").lower()
+
+
+def _request_public_url() -> str:
+    """Resolve the operator-declared dashboard public URL for request guards."""
+    try:
+        from hermes_cli.dashboard_auth.prefix import resolve_public_url
+        return resolve_public_url()
+    except Exception:
+        # Host/Origin validation must not crash the dashboard if config/env
+        # loading is temporarily broken.  Fall back to the bound-host-only
+        # policy, which is the stricter historic behaviour.
+        _log.debug("failed to resolve dashboard public_url", exc_info=True)
+        return ""
+
+
+def _url_port(parsed: urllib.parse.ParseResult) -> Optional[int]:
+    """Return an explicit or default HTTP(S) port for a parsed URL."""
+    try:
+        port = parsed.port
+    except ValueError:
+        return None
+    if port is not None:
+        return port
+    if parsed.scheme == "https":
+        return 443
+    if parsed.scheme == "http":
+        return 80
+    return None
+
+
+def _origin_matches_public_url(origin: str, public_url: Optional[str]) -> bool:
+    """True when a browser Origin targets the configured public dashboard URL.
+
+    ``HERMES_DASHBOARD_PUBLIC_URL`` may include a path prefix, but a browser
+    Origin is only ``scheme://host[:port]``.  Compare scheme, host, and
+    effective port while deliberately ignoring any public path prefix.
+    """
+    if not origin or not public_url:
+        return False
+    try:
+        origin_parsed = urllib.parse.urlparse(origin)
+        public_parsed = urllib.parse.urlparse(public_url)
+    except ValueError:
+        return False
+    if origin_parsed.scheme not in {"http", "https"}:
+        return False
+    if public_parsed.scheme not in {"http", "https"}:
+        return False
+    origin_host = (origin_parsed.hostname or "").lower()
+    public_host = (public_parsed.hostname or "").lower()
+    if not origin_host or not public_host:
+        return False
+    return (
+        origin_parsed.scheme == public_parsed.scheme
+        and origin_host == public_host
+        and _url_port(origin_parsed) == _url_port(public_parsed)
+    )
+
+
+def _is_accepted_host(
+    host_header: str,
+    bound_host: str,
+    *,
+    public_url: Optional[str] = None,
+) -> bool:
     """True if the Host header targets the interface we bound to.
 
     Accepts:
@@ -425,6 +519,9 @@ def _is_accepted_host(host_header: str, bound_host: str) -> bool:
     - Loopback aliases when bound to loopback
     - Any host when bound to 0.0.0.0 (explicit opt-in to non-loopback,
       no protection possible at this layer)
+    - The operator-declared dashboard public URL host when supplied.  This
+      lets reverse-proxied dashboards keep a specific LAN bind address while
+      still accepting browser requests from their real public origin.
     """
     if not host_header:
         return False
@@ -434,17 +531,11 @@ def _is_accepted_host(host_header: str, bound_host: str) -> bool:
     # Plain hosts/v4:
     #   localhost:9119
     #   127.0.0.1:9119
-    h = host_header.strip()
-    if h.startswith("["):
-        # IPv6 bracketed — port (if any) follows "]:"
-        close = h.find("]")
-        if close != -1:
-            host_only = h[1:close]  # strip brackets
-        else:
-            host_only = h.strip("[]")
-    else:
-        host_only = h.rsplit(":", 1)[0] if ":" in h else h
-    host_only = host_only.lower()
+    host_only = _host_from_authority(host_header)
+
+    public_host = _public_url_host(public_url)
+    if public_host and host_only == public_host:
+        return True
 
     # 0.0.0.0 bind means operator explicitly opted into all-interfaces
     # (requires --insecure per web_server.start_server). No Host-layer
@@ -478,7 +569,8 @@ async def host_header_middleware(request: Request, call_next):
     bound_host = getattr(app.state, "bound_host", None)
     if bound_host:
         host_header = request.headers.get("host", "")
-        if not _is_accepted_host(host_header, bound_host):
+        public_url = _request_public_url()
+        if not _is_accepted_host(host_header, bound_host, public_url=public_url):
             return JSONResponse(
                 status_code=400,
                 content={
@@ -14608,8 +14700,9 @@ def _ws_host_origin_reason(ws: "WebSocket") -> Optional[str]:
     if not bound_host:
         return None
 
+    public_url = _request_public_url()
     host_header = ws.headers.get("host", "")
-    if not _is_accepted_host(host_header, bound_host):
+    if not _is_accepted_host(host_header, bound_host, public_url=public_url):
         return f"host_mismatch host={host_header or '?'} bound={bound_host}"
 
     origin = ws.headers.get("origin", "")
@@ -14625,6 +14718,9 @@ def _ws_host_origin_reason(ws: "WebSocket") -> Optional[str]:
 
     if not parsed.netloc:
         return f"origin_mismatch origin={origin} bound={bound_host}"
+
+    if _origin_matches_public_url(origin, public_url):
+        return None
 
     if not _is_accepted_host(parsed.netloc, bound_host):
         return f"origin_mismatch origin={origin} bound={bound_host}"
