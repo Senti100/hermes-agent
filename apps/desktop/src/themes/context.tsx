@@ -18,7 +18,7 @@ import { $activeGatewayProfile, normalizeProfileKey } from '@/store/profile'
 
 import { hexToRgb, mix, readableOn } from './color'
 import { BUILTIN_THEME_LIST, BUILTIN_THEMES, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, nousTheme } from './presets'
-import type { DesktopTheme, DesktopThemeColors } from './types'
+import type { DesktopTheme, DesktopThemeColors, DesktopThemeWallpaper } from './types'
 import { $userThemes, resolveTheme } from './user-themes'
 
 // Legacy global skin (pre per-profile themes). Still the inheritance fallback
@@ -171,6 +171,74 @@ const mixesFor = (isDark: boolean): Record<string, string> => ({
   '--theme-mix-bubble': isDark ? '46%' : '0%'
 })
 
+const WALLPAPER_SURFACE_VARS: Array<[keyof DesktopThemeWallpaper, string]> = [
+  ['backgroundSurface', '--dt-background'],
+  ['chatSurface', '--ui-chat-surface-background'],
+  ['editorSurface', '--ui-editor-surface-background'],
+  ['sidebarSurface', '--ui-sidebar-surface-background'],
+  ['cardSurface', '--dt-card'],
+  ['popoverSurface', '--dt-popover'],
+  ['bubbleSurface', '--ui-chat-bubble-background']
+]
+
+const WALLPAPER_LAYER_VARS = [
+  '--dt-wallpaper-image',
+  '--dt-wallpaper-position',
+  '--dt-wallpaper-size',
+  '--dt-wallpaper-opacity',
+  '--dt-wallpaper-overlay',
+  '--dt-wallpaper-filter',
+  '--dt-wallpaper-scale',
+  '--dt-wallpaper-front-filter'
+] as const
+
+const cssUrl = (value: string): string => {
+  if (
+    !value ||
+    value === 'none' ||
+    value.startsWith('url(') ||
+    value.startsWith('linear-gradient(') ||
+    value.startsWith('radial-gradient(')
+  ) {
+    return value || 'none'
+  }
+
+  return `url("${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+}
+
+const applyWallpaper = (root: HTMLElement, wallpaper: DesktopTheme['wallpaper']) => {
+  if (!wallpaper) {
+    for (const key of WALLPAPER_LAYER_VARS) {
+      root.style.removeProperty(key)
+    }
+
+    for (const [, cssVar] of WALLPAPER_SURFACE_VARS) {
+      root.style.removeProperty(cssVar)
+    }
+
+    return
+  }
+
+  root.style.setProperty('--dt-wallpaper-image', cssUrl(wallpaper.image))
+  root.style.setProperty('--dt-wallpaper-position', wallpaper.position ?? 'center center')
+  root.style.setProperty('--dt-wallpaper-size', wallpaper.size ?? 'cover')
+  root.style.setProperty('--dt-wallpaper-opacity', String(wallpaper.opacity ?? 1))
+  root.style.setProperty('--dt-wallpaper-overlay', wallpaper.overlay ?? 'transparent')
+  root.style.setProperty('--dt-wallpaper-filter', wallpaper.filter ?? 'none')
+  root.style.setProperty('--dt-wallpaper-scale', String(wallpaper.scale ?? 1))
+  root.style.setProperty('--dt-wallpaper-front-filter', wallpaper.frontFilter ?? 'none')
+
+  for (const [field, cssVar] of WALLPAPER_SURFACE_VARS) {
+    const value = wallpaper[field]
+
+    if (value) {
+      root.style.setProperty(cssVar, String(value))
+    } else {
+      root.style.removeProperty(cssVar)
+    }
+  }
+}
+
 function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
   if (typeof document === 'undefined') {
     return
@@ -227,6 +295,8 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
   for (const [k, v] of Object.entries({ ...seeds, ...mixesFor(isDark), ...palette })) {
     root.style.setProperty(k, v)
   }
+
+  applyWallpaper(root, theme.wallpaper)
 
   const chromeBg = chromeBackground(c.background, isDark)
 

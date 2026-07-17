@@ -4,6 +4,7 @@
  */
 
 import type { DesktopTheme, DesktopThemeTypography } from './types'
+import senti100PacketNoirBg from '../assets/senti-100-packet-noir-bg.webp'
 
 // Color-emoji fonts to append to every stack as a last resort. None of the UI
 // text/mono fonts carry emoji glyphs, so without this emoji render as tofu
@@ -277,13 +278,118 @@ export const slateTheme: DesktopTheme = {
   }
 }
 
+/** Senti_100 Packet Noir — cyber-NOC wallpaper with soft glass surfaces. */
+export const senti100PacketNoirTheme: DesktopTheme = {
+  name: 'senti-100-packet-noir',
+  label: 'Senti_100 Packet Noir',
+  description: 'Noir NOC wallpaper, electric-blue accents, and soft blurred glass',
+  colors: {
+    background: '#edf7ff',
+    foreground: '#091421',
+    card: '#f7fbff',
+    cardForeground: '#091421',
+    muted: '#dcecf8',
+    mutedForeground: '#45647d',
+    popover: '#f4faff',
+    popoverForeground: '#091421',
+    primary: '#125d9f',
+    primaryForeground: '#f7fbff',
+    secondary: '#d8efff',
+    secondaryForeground: '#12304a',
+    accent: '#ccecff',
+    accentForeground: '#0a2b49',
+    border: '#a6cde8',
+    input: '#9bc7e4',
+    ring: '#1f8fe8',
+    midground: '#1f8fe8',
+    composerRing: '#125d9f',
+    destructive: '#c54562',
+    destructiveForeground: '#ffffff',
+    sidebarBackground: '#d8edfb',
+    sidebarBorder: '#9dc8e3',
+    userBubble: '#d7efff',
+    userBubbleBorder: '#8cc7ee'
+  },
+  darkColors: {
+    background: '#020814',
+    foreground: '#dceeff',
+    card: '#061326',
+    cardForeground: '#e7f3ff',
+    muted: '#0a1a2f',
+    mutedForeground: '#86a9c4',
+    popover: '#07172c',
+    popoverForeground: '#e7f3ff',
+    primary: '#91d2ff',
+    primaryForeground: '#04101f',
+    secondary: '#0d2440',
+    secondaryForeground: '#b9dcf7',
+    accent: '#0f3157',
+    accentForeground: '#dceeff',
+    border: '#1a4469',
+    input: '#255b86',
+    ring: '#4aaeff',
+    midground: '#4aaeff',
+    composerRing: '#9bd8ff',
+    destructive: '#e85f82',
+    destructiveForeground: '#fff6f8',
+    sidebarBackground: '#020713',
+    sidebarBorder: '#133554',
+    userBubble: '#0a2341',
+    userBubbleBorder: '#2d70a7'
+  },
+  typography: {
+    fontSans: SYSTEM_SANS,
+    fontMono: `"JetBrains Mono", "SF Mono", ${SYSTEM_MONO}`
+  },
+  wallpaper: {
+    image: senti100PacketNoirBg,
+    position: 'center center',
+    size: 'cover',
+    opacity: 0.96,
+    filter: 'saturate(1.12) brightness(0.84)',
+    scale: 1.018,
+    frontFilter: 'blur(2px) saturate(1.04)',
+    overlay:
+      'linear-gradient(90deg, rgba(1, 6, 16, 0.72) 0%, rgba(2, 10, 24, 0.48) 46%, rgba(3, 10, 22, 0.22) 100%), radial-gradient(circle at 72% 42%, rgba(74, 174, 255, 0.14), transparent 34%)',
+    backgroundSurface: 'rgba(2, 8, 20, 0.28)',
+    chatSurface: 'rgba(2, 8, 20, 0.20)',
+    editorSurface: 'rgba(2, 8, 20, 0.18)',
+    sidebarSurface: 'rgba(1, 6, 16, 0.42)',
+    cardSurface: 'rgba(6, 18, 36, 0.58)',
+    popoverSurface: 'rgba(5, 16, 32, 0.72)',
+    bubbleSurface: 'rgba(7, 28, 52, 0.58)'
+  },
+  darkTerminal: {
+    foreground: '#dceeff',
+    cursor: '#9bd8ff',
+    selectionBackground: 'rgba(74, 174, 255, 0.26)',
+    black: '#020814',
+    red: '#e85f82',
+    green: '#66d6a6',
+    yellow: '#ffd36f',
+    blue: '#4aaeff',
+    magenta: '#b79cff',
+    cyan: '#60d7ff',
+    white: '#dceeff',
+    brightBlack: '#42647e',
+    brightRed: '#ff7b9b',
+    brightGreen: '#82efbd',
+    brightYellow: '#ffe18c',
+    brightBlue: '#7cc7ff',
+    brightMagenta: '#cbb7ff',
+    brightCyan: '#92e5ff',
+    brightWhite: '#f5fbff'
+  }
+}
+
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
   nous: nousTheme,
   midnight: midnightTheme,
   ember: emberTheme,
   mono: monoTheme,
   cyberpunk: cyberpunkTheme,
-  slate: slateTheme
+  slate: slateTheme,
+  'senti-100-packet-noir': senti100PacketNoirTheme
 }
 
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)

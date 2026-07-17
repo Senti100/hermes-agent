@@ -407,6 +407,14 @@
     /* `--noise-opacity-mul` is set per-mode by `applyTheme()`. */
     --noise-opacity-mul: 1;
     --backdrop-invert-mul: 1;
+    --dt-wallpaper-image: none;
+    --dt-wallpaper-position: center center;
+    --dt-wallpaper-size: cover;
+    --dt-wallpaper-opacity: 0;
+    --dt-wallpaper-overlay: transparent;
+    --dt-wallpaper-filter: none;
+    --dt-wallpaper-front-filter: none;
+    --dt-wallpaper-scale: 1;
   }
 
   :root.dark {
@@ -435,6 +443,24 @@
     --ui-inline-code-background: color-mix(in srgb, #ffffff 7%, transparent);
     --ui-inline-code-foreground: color-mix(in srgb, #ffffff 88%, transparent);
     --ui-selection-background: color-mix(in srgb, #ffd24a 38%, transparent);
+  }
+
+  :root[data-hermes-theme='senti-100-packet-noir'] {
+    --theme-row-hover-accent-mix: 16%;
+    --theme-row-active-accent-mix: 24%;
+    --theme-control-hover-accent-mix: 18%;
+    --theme-control-active-accent-mix: 24%;
+    --ui-row-hover-background: rgba(74, 174, 255, 0.13);
+    --ui-row-active-background: rgba(74, 174, 255, 0.2);
+    --ui-control-hover-background: rgba(74, 174, 255, 0.14);
+    --ui-control-active-background: rgba(74, 174, 255, 0.22);
+    --chrome-action-hover: rgba(74, 174, 255, 0.16);
+    --ui-bg-input: rgba(5, 16, 32, 0.58);
+    --dt-input-bg: 18%;
+    --dt-input-border: 12%;
+    --shadow-nous:
+      0 0.125rem 0.25rem -0.125rem rgba(0, 0, 0, 0.32), 0 0.5rem 1.15rem -0.5rem rgba(0, 0, 0, 0.34),
+      0 1.25rem 2.4rem -1rem rgba(0, 0, 0, 0.36), 0 0 0 0.0625rem rgba(145, 210, 255, 0.08);
   }
 
   * {
@@ -467,6 +493,44 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-font-smoothing: antialiased;
+  }
+
+  #root {
+    position: relative;
+    isolation: isolate;
+    background: transparent;
+  }
+
+  #root::before,
+  #root::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  #root::before {
+    z-index: 0;
+    background-image: var(--dt-wallpaper-image);
+    background-position: var(--dt-wallpaper-position);
+    background-repeat: no-repeat;
+    background-size: var(--dt-wallpaper-size);
+    filter: var(--dt-wallpaper-filter);
+    opacity: var(--dt-wallpaper-opacity);
+    transform: scale(var(--dt-wallpaper-scale));
+    transform-origin: center;
+  }
+
+  #root::after {
+    z-index: 0;
+    background: var(--dt-wallpaper-overlay);
+    -webkit-backdrop-filter: var(--dt-wallpaper-front-filter);
+    backdrop-filter: var(--dt-wallpaper-front-filter);
+  }
+
+  #root > * {
+    position: relative;
+    z-index: 1;
   }
 
   button,
