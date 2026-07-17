@@ -99,6 +99,7 @@ Hermes reads environment variables from the process environment and, for user-ma
 | `CLAUDE_CODE_OAUTH_TOKEN` | Explicit Claude Code token override if you export one manually |
 | `HERMES_MODEL` | Override model name at process level (used by cron scheduler; prefer `config.yaml` for normal use) |
 | `VOICE_TOOLS_OPENAI_KEY` | Preferred OpenAI key for OpenAI speech-to-text and text-to-speech providers |
+| `HERMES_QWEN3_TTS_API_KEY` | Optional credential for the configured Qwen3 TTS HTTP proxy; the variable name can be overridden with `tts.qwen3.api_key_env` |
 | `HERMES_LOCAL_STT_COMMAND` | Optional local speech-to-text command template. Supports `{input_path}`, `{output_dir}`, `{language}`, and `{model}` placeholders |
 | `HERMES_LOCAL_STT_LANGUAGE` | Default language passed to `HERMES_LOCAL_STT_COMMAND` or auto-detected local `whisper` CLI fallback (default: `en`) |
 | `HERMES_HOME` | Override Hermes config directory (default: `~/.hermes`). Also scopes the gateway PID file and systemd service name, so multiple installations can run concurrently |

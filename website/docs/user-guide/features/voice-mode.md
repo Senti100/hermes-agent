@@ -105,6 +105,36 @@ ELEVENLABS_API_KEY=***           # ElevenLabs — premium quality
 If `faster-whisper` is installed, voice mode works with **zero API keys** for STT. The model (~150 MB for `base`) downloads automatically on first use.
 :::
 
+### Qwen3 TTS HTTP proxy
+
+This fork includes an optional `qwen3` TTS provider for an OpenAI-compatible `/v1/audio/speech` proxy. Keep deployment values in `config.yaml`; only the optional proxy credential belongs in `.env`.
+
+```yaml
+# ~/.hermes/config.yaml (or a named profile's config.yaml)
+tts:
+  provider: qwen3
+  qwen3:
+    base_url: http://127.0.0.1:19380
+    endpoint: /v1/audio/speech
+    model: ""
+    voice: ""
+    output_format: wav
+    language: English
+    timeout: 300
+    api_key_env: HERMES_QWEN3_TTS_API_KEY # gitleaks:allow -- environment variable name
+    ref_audio: ""
+    ref_text: ""
+    ref_text_file: ""
+```
+
+If the proxy requires authentication, add only the credential value to the active profile's ignored `.env`:
+
+```bash
+HERMES_QWEN3_TTS_API_KEY=your-proxy-key
+```
+
+The loopback URL shown above is a safe default for a proxy running on the same host. Use a profile-local `config.yaml` value for another non-secret endpoint rather than hardcoding it in source.
+
 ---
 
 ## CLI Voice Mode

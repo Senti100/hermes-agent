@@ -405,6 +405,7 @@ BUILTIN_TTS_PROVIDERS = frozenset({
     "kittentts",
     "piper",
     "deepinfra",
+    "qwen3",
 })
 
 DEFAULT_COMMAND_TTS_TIMEOUT_SECONDS = 120
@@ -2279,6 +2280,87 @@ def _generate_kittentts(text: str, output_path: str, tts_config: Dict[str, Any])
 
 
 # ===========================================================================
+# Provider: Qwen3 TTS (local HTTP proxy)
+# ===========================================================================
+def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any]) -> str:
+    """Generate speech using a local Qwen3 TTS HTTP proxy.
+
+    Posts to an OpenAI-compatible ``/v1/audio/speech`` endpoint,
+    supports Base voice-clone via ``ref_audio`` + ``ref_text``.
+    """
+    import requests
+
+    qwen3_config = tts_config.get("qwen3", {}) if isinstance(tts_config, dict) else {}
+    base_url = str(qwen3_config.get("base_url", "http://127.0.0.1:19380")).strip().rstrip("/")
+    endpoint = str(qwen3_config.get("endpoint", "/v1/audio/speech")).strip()
+    model = str(qwen3_config.get("model", "")).strip()
+    voice = str(qwen3_config.get("voice", "")).strip()
+    output_format = str(qwen3_config.get("output_format", "wav")).strip()
+    timeout = int(qwen3_config.get("timeout", 300))
+    language = str(qwen3_config.get("language", "English")).strip()
+
+    ref_audio = str(qwen3_config.get("ref_audio", "")).strip()
+    ref_text = str(qwen3_config.get("ref_text", "")).strip()
+    ref_text_file = str(qwen3_config.get("ref_text_file", "")).strip()
+
+    if not ref_text and ref_text_file:
+        try:
+            ref_text = Path(ref_text_file).expanduser().read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning("Qwen3 ref_text_file unreadable at %s: %s", ref_text_file, exc)
+
+    payload: Dict[str, Any] = {
+        "input": text,
+        "output_format": output_format,
+        "language": language,
+    }
+    if model:
+        payload["model"] = model
+    if voice:
+        payload["voice"] = voice
+    if ref_audio:
+        payload["ref_audio"] = ref_audio
+        payload["refAudio"] = ref_audio
+    if ref_text:
+        payload["ref_text"] = ref_text
+        payload["refText"] = ref_text
+
+    url = f"{base_url}{endpoint}"
+    api_key_env = str(
+        qwen3_config.get("api_key_env", "HERMES_QWEN3_TTS_API_KEY")  # gitleaks:allow -- key name
+    ).strip()
+    api_key = (get_env_value(api_key_env) or "") if api_key_env else ""
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    response.raise_for_status()
+
+    # Proxy returns WAV; write to a WAV path first, then convert/rename if needed.
+    wav_path = output_path
+    if not output_path.endswith(".wav"):
+        wav_path = output_path.rsplit(".", 1)[0] + ".wav"
+
+    with open(wav_path, "wb") as f:
+        f.write(response.content)
+
+    if wav_path != output_path:
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            conv_cmd = [ffmpeg, "-i", wav_path, "-y", "-loglevel", "error", output_path]
+            subprocess.run(conv_cmd, check=True, timeout=30, stdin=subprocess.DEVNULL)
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
+        else:
+            os.rename(wav_path, output_path)
+
+    return output_path
+
+
+# ===========================================================================
 # Main tool function
 # ===========================================================================
 def text_to_speech_tool(
@@ -2496,6 +2578,10 @@ def text_to_speech_tool(
             logger.info("Generating speech with Piper (local)...")
             _generate_piper_tts(text, file_str, tts_config)
 
+        elif provider == "qwen3":
+            logger.info("Generating speech with Qwen3 TTS...")
+            _generate_qwen3_tts(text, file_str, tts_config)
+
         else:
             # Default: Edge TTS (free), with NeuTTS as local fallback
             edge_available = True
@@ -2561,7 +2647,7 @@ def text_to_speech_tool(
                 voice_compatible = file_str.endswith(".ogg")
         elif (
             want_opus
-            and provider in {"edge", "neutts", "minimax", "xai", "kittentts", "piper"}
+            and provider in {"edge", "neutts", "minimax", "xai", "kittentts", "piper", "qwen3"}
             and not file_str.endswith(".ogg")
         ):
             opus_path = _convert_to_opus(file_str)
