@@ -4220,31 +4220,37 @@ class DiscordAdapter(BasePlatformAdapter):
         # This ensures new commands added to COMMAND_REGISTRY in
         # hermes_cli/commands.py automatically appear as Discord slash
         # commands without needing a manual entry here.
-        def _build_auto_slash_command(_name: str, _description: str, _args_hint: str = ""):
+        def _build_auto_slash_command(
+            _name: str,
+            _description: str,
+            _args_hint: str = "",
+            _dispatch_name: str | None = None,
+        ):
             """Build a discord.app_commands.Command that proxies to _run_simple_slash."""
             discord_name = _name.lower()[:32]
             desc = (_description or f"Run /{_name}")[:100]
             has_args = bool(_args_hint)
+            dispatch_name = (_dispatch_name or _name).lower()
 
             if has_args:
-                def _make_args_handler(__name: str, __hint: str):
+                def _make_args_handler(__name: str, __dispatch_name: str, __hint: str):
                     @discord.app_commands.describe(args=f"Arguments: {__hint}"[:100])
                     async def _handler(interaction: discord.Interaction, args: str = ""):
                         await self._run_simple_slash(
-                            interaction, f"/{__name} {args}".strip()
+                            interaction, f"/{__dispatch_name} {args}".strip()
                         )
                     _handler.__name__ = f"auto_slash_{__name.replace('-', '_')}"
                     return _handler
 
-                handler = _make_args_handler(_name, _args_hint)
+                handler = _make_args_handler(_name, dispatch_name, _args_hint)
             else:
-                def _make_simple_handler(__name: str):
+                def _make_simple_handler(__name: str, __dispatch_name: str):
                     async def _handler(interaction: discord.Interaction):
-                        await self._run_simple_slash(interaction, f"/{__name}")
+                        await self._run_simple_slash(interaction, f"/{__dispatch_name}")
                     _handler.__name__ = f"auto_slash_{__name.replace('-', '_')}"
                     return _handler
 
-                handler = _make_simple_handler(_name)
+                handler = _make_simple_handler(_name, dispatch_name)
 
             return discord.app_commands.Command(
                 name=discord_name,
@@ -4272,24 +4278,29 @@ class DiscordAdapter(BasePlatformAdapter):
                 if not _is_gateway_available(cmd_def, config_overrides):
                     continue
                 # Discord command names: lowercase, hyphens OK, max 32 chars.
-                discord_name = cmd_def.name.lower()[:32]
-                if discord_name in already_registered:
-                    continue
-                if len(already_registered) >= slot_cap:
-                    dropped_over_cap += 1
-                    continue
-                auto_cmd = _build_auto_slash_command(
-                    cmd_def.name,
-                    cmd_def.description,
-                    cmd_def.args_hint,
-                )
-                try:
-                    tree.add_command(auto_cmd)
-                    already_registered.add(discord_name)
-                except Exception:
-                    # Silently skip commands that fail registration (e.g.
-                    # name conflict with a subcommand group).
-                    pass
+                for raw_name in (cmd_def.name, *cmd_def.aliases):
+                    discord_name = raw_name.lower()[:32]
+                    if discord_name in already_registered:
+                        continue
+                    if len(already_registered) >= slot_cap:
+                        dropped_over_cap += 1
+                        continue
+                    description = cmd_def.description
+                    if raw_name != cmd_def.name:
+                        description = f"Alias for /{cmd_def.name}: {description}"
+                    auto_cmd = _build_auto_slash_command(
+                        raw_name,
+                        description,
+                        cmd_def.args_hint,
+                        cmd_def.name,
+                    )
+                    try:
+                        tree.add_command(auto_cmd)
+                        already_registered.add(discord_name)
+                    except Exception:
+                        # Silently skip commands that fail registration (e.g.
+                        # name conflict with a subcommand group).
+                        pass
 
             logger.debug(
                 "Discord auto-registered %d commands from COMMAND_REGISTRY",

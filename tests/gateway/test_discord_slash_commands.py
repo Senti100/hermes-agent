@@ -238,6 +238,27 @@ async def test_auto_registered_command_with_args(adapter):
 
 
 @pytest.mark.asyncio
+async def test_auto_registers_gateway_aliases(adapter):
+    """Gateway aliases should work as native Discord slash commands too."""
+    adapter._run_simple_slash = AsyncMock()
+    adapter._register_slash_commands()
+
+    tree_names = set(adapter._client.tree.commands.keys())
+    for alias in {"fork", "q", "set-home"}:
+        assert alias in tree_names, f"/{alias} alias should be registered on Discord"
+
+    interaction = SimpleNamespace()
+
+    await adapter._client.tree.commands["fork"].callback(interaction, args="my-branch")
+    adapter._run_simple_slash.assert_awaited_once_with(
+        interaction, "/branch my-branch"
+    )
+
+    adapter._run_simple_slash.reset_mock()
+    await adapter._client.tree.commands["q"].callback(interaction, args="later")
+    adapter._run_simple_slash.assert_awaited_once_with(interaction, "/queue later")
+
+@pytest.mark.asyncio
 async def test_auto_registers_plugin_commands_for_discord(adapter):
     """Plugin slash commands should appear as native Discord app commands."""
     adapter._run_simple_slash = AsyncMock()
