@@ -305,6 +305,7 @@ describe('fromSkin', () => {
 
     expect(fromSkin({}, {}, 'LOGO', 'HERO').bannerLogo).toBe('LOGO')
     expect(fromSkin({}, {}, 'LOGO', 'HERO').bannerHero).toBe('HERO')
+    expect(fromSkin({}, {}, 'LOGO', 'HERO', '', '', 'ANSI').bannerHeroAnsi).toBe('ANSI')
   })
 
   it('maps ui_ color keys + cascades to status', async () => {

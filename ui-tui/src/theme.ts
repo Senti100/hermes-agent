@@ -49,6 +49,7 @@ export interface Theme {
   brand: ThemeBrand
   bannerLogo: string
   bannerHero: string
+  bannerHeroAnsi: string
 }
 
 // ── Color math ───────────────────────────────────────────────────────
@@ -298,7 +299,8 @@ export const DARK_THEME: Theme = {
   brand: BRAND,
 
   bannerLogo: '',
-  bannerHero: ''
+  bannerHero: '',
+  bannerHeroAnsi: ''
 }
 
 // Light-terminal palette: darker golds/ambers that stay legible on white
@@ -343,7 +345,8 @@ export const LIGHT_THEME: Theme = {
   brand: BRAND,
 
   bannerLogo: '',
-  bannerHero: ''
+  bannerHero: '',
+  bannerHeroAnsi: ''
 }
 
 const TRUE_RE = /^(?:1|true|yes|on)$/
@@ -516,7 +519,8 @@ export function fromSkin(
   bannerLogo = '',
   bannerHero = '',
   toolPrefix = '',
-  helpHeader = ''
+  helpHeader = '',
+  bannerHeroAnsi = ''
 ): Theme {
   const d = DEFAULT_THEME
   const c = (k: string) => colors[k]
@@ -585,7 +589,8 @@ export function fromSkin(
       },
 
       bannerLogo,
-      bannerHero
+      bannerHero,
+      bannerHeroAnsi
     },
     process.env,
     DEFAULT_LIGHT_MODE

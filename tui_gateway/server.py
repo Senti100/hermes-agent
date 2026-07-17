@@ -2098,6 +2098,7 @@ def resolve_skin() -> dict:
             "branding": skin.branding,
             "banner_logo": skin.banner_logo,
             "banner_hero": skin.banner_hero,
+            "banner_hero_ansi": skin.banner_hero_ansi,
             "tool_prefix": skin.tool_prefix,
             "help_header": (skin.branding or {}).get("help_header", ""),
         }

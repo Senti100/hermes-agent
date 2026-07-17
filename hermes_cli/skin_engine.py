@@ -75,6 +75,12 @@ All fields are optional. Missing values inherit from the ``default`` skin.
     # Tool prefix: character for tool output lines (default: ┊)
     tool_prefix: "┊"
 
+    # Optional raw ANSI hero art for terminal-native images. The path is
+    # relative to this skin YAML and should point at a small, pre-wrapped ANSI
+    # file (for example colored Braille/dot art). Normal ``banner_hero`` is
+    # still used as a fallback by older TUI clients.
+    banner_hero_ansi_path: "assets/mytheme-hero.ansi"
+
     # Tool emojis: override the default emoji for any tool (used in spinners & progress)
     tool_emojis:
       terminal: "⚔"           # Override terminal tool emoji
@@ -138,6 +144,7 @@ class SkinConfig:
     tool_emojis: Dict[str, str] = field(default_factory=dict)  # per-tool emoji overrides
     banner_logo: str = ""    # Rich-markup ASCII art logo (replaces HERMES_AGENT_LOGO)
     banner_hero: str = ""    # Rich-markup hero art (replaces HERMES_CADUCEUS)
+    banner_hero_ansi: str = ""  # Raw ANSI hero art, usually loaded from banner_hero_ansi_path
 
     def get_color(self, key: str, fallback: str = "") -> str:
         """Get a color value with fallback."""
@@ -665,6 +672,8 @@ def _load_skin_from_yaml(path: Path) -> Optional[Dict[str, Any]]:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         if isinstance(data, dict) and "name" in data:
+            data = dict(data)
+            data["__source_path"] = str(path)
             return data
     except Exception as e:
         logger.debug("Failed to load skin from %s: %s", path, e)
@@ -684,6 +693,61 @@ def _mapping_or_empty(value: Any, *, section: str, skin_name: str) -> Dict[str, 
         type(value).__name__,
     )
     return {}
+
+
+def _text_or_empty(value: Any, *, section: str, skin_name: str) -> str:
+    """Return a string value or an empty string when the field type is invalid."""
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return ""
+    logger.warning(
+        "Skin '%s' has invalid '%s' field type (%s); ignoring field",
+        skin_name,
+        section,
+        type(value).__name__,
+    )
+    return ""
+
+
+def _read_relative_skin_asset(data: Dict[str, Any], rel_path: str, *, field: str, skin_name: str) -> str:
+    """Read a text asset next to a skin YAML, refusing absolute/traversal paths."""
+    rel = Path(rel_path)
+    if rel.is_absolute():
+        logger.warning("Skin '%s' has absolute '%s' path; ignoring field", skin_name, field)
+        return ""
+
+    source = data.get("__source_path")
+    base = Path(str(source)).parent if source else _skins_dir()
+    try:
+        base_resolved = base.resolve()
+        asset = (base / rel).resolve()
+    except Exception as e:
+        logger.warning("Skin '%s' could not resolve '%s' asset %r: %s", skin_name, field, rel_path, e)
+        return ""
+
+    if asset != base_resolved and base_resolved not in asset.parents:
+        logger.warning("Skin '%s' has '%s' path outside its skin directory; ignoring field", skin_name, field)
+        return ""
+
+    try:
+        return asset.read_text(encoding="utf-8")
+    except Exception as e:
+        logger.warning("Skin '%s' could not read '%s' asset %s: %s", skin_name, field, asset, e)
+        return ""
+
+
+def _resolve_banner_hero_ansi(data: Dict[str, Any], *, skin_name: str) -> str:
+    """Resolve inline or asset-backed raw ANSI hero art for TUI renderers."""
+    inline = _text_or_empty(data.get("banner_hero_ansi"), section="banner_hero_ansi", skin_name=skin_name)
+    if inline:
+        return inline
+
+    path = _text_or_empty(data.get("banner_hero_ansi_path"), section="banner_hero_ansi_path", skin_name=skin_name)
+    if not path:
+        return ""
+
+    return _read_relative_skin_asset(data, path, field="banner_hero_ansi_path", skin_name=skin_name)
 
 
 def _build_skin_config(data: Dict[str, Any]) -> SkinConfig:
@@ -713,6 +777,7 @@ def _build_skin_config(data: Dict[str, Any]) -> SkinConfig:
         tool_emojis=emoji_overrides,
         banner_logo=data.get("banner_logo", ""),
         banner_hero=data.get("banner_hero", ""),
+        banner_hero_ansi=_resolve_banner_hero_ansi(data, skin_name=skin_name),
     )
 
 

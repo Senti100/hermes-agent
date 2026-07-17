@@ -207,6 +207,28 @@ class TestUserSkins:
         # Should inherit defaults for unspecified colors
         assert skin.get_color("banner_border") == "#CD7F32"  # from default
 
+    def test_load_user_skin_reads_banner_hero_ansi_asset(self, tmp_path, monkeypatch):
+        from hermes_cli.skin_engine import load_skin
+
+        skins_dir = tmp_path / "skins"
+        assets_dir = skins_dir / "assets"
+        assets_dir.mkdir(parents=True)
+        ansi = "\x1b[38;2;1;2;3m⣿\x1b[0m\n"
+        (assets_dir / "hero.ansi").write_text(ansi, encoding="utf-8")
+
+        import yaml
+
+        (skins_dir / "custom.yaml").write_text(
+            yaml.dump({"name": "custom", "banner_hero": "fallback", "banner_hero_ansi_path": "assets/hero.ansi"}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr("hermes_cli.skin_engine._skins_dir", lambda: skins_dir)
+
+        skin = load_skin("custom")
+
+        assert skin.banner_hero == "fallback"
+        assert skin.banner_hero_ansi == ansi
+
     def test_load_user_skin_invalid_section_types_fall_back_to_defaults(self, tmp_path, monkeypatch):
         from hermes_cli.skin_engine import load_skin
 
