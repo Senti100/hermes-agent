@@ -175,6 +175,30 @@ async def test_run_simple_slash_executes_when_defer_interaction_expired(adapter)
 
 
 @pytest.mark.asyncio
+async def test_auto_registers_priority_gateway_aliases(adapter):
+    """Priority aliases stay native and dispatch through their canonical command."""
+    adapter._run_simple_slash = AsyncMock()
+    adapter._register_slash_commands()
+
+    tree_names = set(adapter._client.tree.commands.keys())
+    for canonical, alias in (("branch", "fork"), ("queue", "q"), ("sethome", "set-home")):
+        assert canonical in tree_names
+        assert alias in tree_names
+
+    interaction = SimpleNamespace()
+    await adapter._client.tree.commands["fork"].callback(interaction, args="my-branch")
+    adapter._run_simple_slash.assert_awaited_once_with(interaction, "/branch my-branch")
+
+    adapter._run_simple_slash.reset_mock()
+    await adapter._client.tree.commands["q"].callback(interaction, args="later")
+    adapter._run_simple_slash.assert_awaited_once_with(interaction, "/queue later")
+
+    adapter._run_simple_slash.reset_mock()
+    await adapter._client.tree.commands["set-home"].callback(interaction)
+    adapter._run_simple_slash.assert_awaited_once_with(interaction, "/sethome")
+
+
+@pytest.mark.asyncio
 async def test_auto_registers_plugin_commands_for_discord(adapter):
     """Plugin slash commands should appear as native Discord app commands."""
     adapter._run_simple_slash = AsyncMock()
