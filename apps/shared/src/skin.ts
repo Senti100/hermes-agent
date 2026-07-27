@@ -105,6 +105,8 @@ export interface HermesSkin {
   branding?: SkinBranding
   banner_logo?: string
   banner_hero?: string
+  /** Optional terminal-native ANSI art resolved by the Python skin engine. */
+  banner_hero_ansi?: string
   tool_prefix?: string
   help_header?: string
 }

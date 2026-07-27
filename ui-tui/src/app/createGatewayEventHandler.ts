@@ -94,7 +94,8 @@ const themeForSkin = (s: GatewaySkin) => {
     s.banner_logo ?? '',
     s.banner_hero ?? '',
     s.tool_prefix ?? '',
-    s.help_header ?? ''
+    s.help_header ?? '',
+    s.banner_hero_ansi ?? ''
   )
 }
 
@@ -151,7 +152,8 @@ const themesEqual = (a: Theme, b: Theme) => {
     a.brand.name === b.brand.name &&
     a.brand.prompt === b.brand.prompt &&
     a.bannerLogo === b.bannerLogo &&
-    a.bannerHero === b.bannerHero
+    a.bannerHero === b.bannerHero &&
+    a.bannerHeroAnsi === b.bannerHeroAnsi
   )
 }
 

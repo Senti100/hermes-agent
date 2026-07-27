@@ -1,0 +1,9 @@
+name: perplexity_search
+version: 1.0.0
+description: "Perplexity Sonar live web research/search tool using PERPLEXITY_API_KEY; returns synthesized answers, citations, and usage metadata."
+author: Carlotta
+kind: backend
+requires_env:
+  - PERPLEXITY_API_KEY
+provides_tools:
+  - perplexity_search
