@@ -64,6 +64,7 @@ export interface Theme {
   brand: ThemeBrand
   bannerLogo: string
   bannerHero: string
+  bannerHeroAnsi: string
 }
 
 // ── Color math ───────────────────────────────────────────────────────
@@ -419,14 +420,16 @@ export const DARK_THEME: Theme = {
   color: buildPalette(DARK_SEEDS, false),
   brand: BRAND,
   bannerLogo: '',
-  bannerHero: ''
+  bannerHero: '',
+  bannerHeroAnsi: ''
 }
 
 export const LIGHT_THEME: Theme = {
   color: buildPalette(LIGHT_SEEDS, true),
   brand: BRAND,
   bannerLogo: '',
-  bannerHero: ''
+  bannerHero: '',
+  bannerHeroAnsi: ''
 }
 
 // ── Background-aware readability adaptation ─────────────────────────
@@ -841,7 +844,8 @@ export function fromSkin(
   bannerLogo = '',
   bannerHero = '',
   toolPrefix = '',
-  helpHeader = ''
+  helpHeader = '',
+  bannerHeroAnsi = ''
 ): Theme {
   // Polarity: the skin's own canvas when it authors one (see skinIsLight);
   // otherwise live host detection (not the module-load snapshot — by the time
@@ -961,7 +965,8 @@ export function fromSkin(
       },
 
       bannerLogo,
-      bannerHero
+      bannerHero,
+      bannerHeroAnsi
     },
     process.env,
     isLight
