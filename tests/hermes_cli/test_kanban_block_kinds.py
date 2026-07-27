@@ -5,8 +5,9 @@ task, a cron unblocks it, the worker re-blocks for the same reason, repeat
 forever. The fix gives ``block_task`` a typed ``kind`` and a persistent
 ``block_recurrences`` counter:
 
-* ``dependency`` blocks route to ``todo`` (parent-gated, auto-resumed) and
-  never enter the human ``blocked`` bucket a cron would keep unblocking.
+* ``dependency`` blocks with an unfinished parent route to ``todo``
+  (parent-gated, auto-resumed). Parentless/all-terminal dependency blocks are
+  invalid and become sticky ``needs_input`` blocks instead of retry storms.
 * ``needs_input`` / ``capability`` / un-typed blocks land in ``blocked``;
   each same-cause re-block after an unblock increments ``block_recurrences``,
   and at ``BLOCK_RECURRENCE_LIMIT`` the task routes to ``triage`` for a human.
@@ -70,8 +71,9 @@ def test_block_loop_detected_event_emitted(kanban_home: Path) -> None:
         kb.unblock_task(conn, tid)
         _make_running_again(conn, tid)
         kb.block_task(conn, tid, reason="x", kind="capability")
-        events = [e for e in kb.list_events(conn, tid)
-                  if e.kind == "block_loop_detected"]
+        events = [
+            e for e in kb.list_events(conn, tid) if e.kind == "block_loop_detected"
+        ]
         assert events, "expected a block_loop_detected event"
         payload = events[-1].payload or {}
         assert payload.get("recurrences") == 2
@@ -81,6 +83,52 @@ def test_block_loop_detected_event_emitted(kanban_home: Path) -> None:
 # ---------------------------------------------------------------------------
 # Dependency routing
 # ---------------------------------------------------------------------------
+
+
+def test_dependency_block_routes_to_todo(kanban_home: Path) -> None:
+    """Dependency waits never enter the human 'blocked' bucket."""
+    with kb.connect_closing() as conn:
+        parent = kb.create_task(conn, title="parent", assignee="worker")
+        child = _running_task(conn, title="child")
+        kb.link_tasks(conn, parent_id=parent, child_id=child)
+        assert kb.block_task(conn, child, reason="need X first", kind="dependency")
+        t = kb.get_task(conn, child)
+        assert t.status == "todo"
+        assert t.block_kind == "dependency"
+
+
+def test_parentless_dependency_block_is_sticky(kanban_home: Path) -> None:
+    """A parentless dependency block must not immediately auto-promote."""
+    with kb.connect_closing() as conn:
+        tid = _running_task(conn)
+        assert kb.block_task(
+            conn, tid, reason="missing prerequisite", kind="dependency"
+        )
+        t = kb.get_task(conn, tid)
+        assert t is not None
+        assert t.status == "blocked"
+        assert t.block_kind == "needs_input"
+        assert t.block_recurrences == 1
+        assert kb.recompute_ready(conn) == 0
+        t = kb.get_task(conn, tid)
+        assert t is not None
+        assert t.status == "blocked"
+
+
+def test_all_terminal_dependency_block_is_sticky(kanban_home: Path) -> None:
+    """A dependency block with no unfinished parent also needs review."""
+    with kb.connect_closing() as conn:
+        parent = kb.create_task(conn, title="parent", assignee="worker")
+        child = _running_task(conn, title="child")
+        kb.link_tasks(conn, parent_id=parent, child_id=child)
+        with kb.write_txn(conn):
+            conn.execute("UPDATE tasks SET status='done' WHERE id=?", (parent,))
+        assert kb.block_task(conn, child, reason="stale dependency", kind="dependency")
+        t = kb.get_task(conn, child)
+        assert t is not None
+        assert t.status == "blocked"
+        assert t.block_kind == "needs_input"
+        assert kb.recompute_ready(conn) == 0
 
 
 def test_dependency_then_parent_done_promotes(kanban_home: Path) -> None:
