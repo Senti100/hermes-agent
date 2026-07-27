@@ -502,7 +502,33 @@ def test_delete_task_removes_task_and_cascades(kanban_home):
 # ---------------------------------------------------------------------------
 
 
+def test_dispatch_dry_run_respects_shared_max_spawn(
+    kanban_home, all_assignees_spawnable
+):
+    """Ready and review candidates share one max_spawn budget in dry-run."""
+    with kb.connect() as conn:
+        ready = [
+            kb.create_task(conn, title=f"ready-{i}", assignee=f"ready-{i}")
+            for i in range(2)
+        ]
+        review = [
+            kb.create_task(conn, title=f"review-{i}", assignee=f"review-{i}")
+            for i in range(3)
+        ]
+        conn.executemany(
+            "UPDATE tasks SET status = 'review' WHERE id = ?",
+            [(task_id,) for task_id in review],
+        )
+        conn.commit()
 
+        res = kb.dispatch_once(conn, dry_run=True, max_spawn=3)
+
+        assert [item[0] for item in res.spawned] == [*ready, review[0]]
+        for task_id in [*ready, *review]:
+            expected = "review" if task_id in review else "ready"
+            task = kb.get_task(conn, task_id)
+            assert task is not None
+            assert task.status == expected
 
 
 # ---------------------------------------------------------------------------
