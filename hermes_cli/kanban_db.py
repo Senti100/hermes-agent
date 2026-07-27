@@ -107,11 +107,13 @@ VALID_INITIAL_STATUSES = {"running", "blocked"}
 # instead of all landing in one undifferentiated ``blocked`` bucket that a cron
 # unblocks → worker re-blocks → cron unblocks … forever.
 #
-#   * ``dependency``   — can't proceed until another task finishes. Routed to
-#                        ``todo`` (NOT ``blocked``) so the existing
+#   * ``dependency``   — can't proceed until an unfinished parent task
+#                        finishes. Routed to ``todo`` (NOT ``blocked``) so the
 #                        parent-gating / ``recompute_ready`` machinery promotes
-#                        it automatically once parents are done. No human, no
-#                        cron, no retry storm.
+#                        it once parents are done. A dependency block with no
+#                        unfinished parent is invalid and becomes a sticky
+#                        ``needs_input`` block; otherwise ``all([])`` would
+#                        immediately re-promote a parentless task forever.
 #   * ``needs_input``  — needs a human decision/answer it cannot derive.
 #   * ``capability``   — hit a hard wall (no access, missing creds, an action no
 #                        AI agent can perform). Genuinely human-only.
@@ -5482,11 +5484,13 @@ def block_task(
     un-typed block) drives routing instead of every block landing in one
     undifferentiated ``blocked`` bucket:
 
-    * ``dependency`` — the task is only waiting on another task. It does NOT
-      sit in ``blocked`` (where a cron would keep "unblocking" it); it goes to
-      ``todo`` so the existing parent-gating / ``recompute_ready`` machinery
-      promotes it automatically once its parents finish. No human, no cron, no
-      retry storm. This is Dale's "Type 2 — dependency blocked".
+    * ``dependency`` — an unfinished prerequisite parent has not finished yet.
+      It does NOT sit in ``blocked`` (where a cron would keep "unblocking" it);
+      it goes to ``todo`` so the parent-gating / ``recompute_ready`` machinery
+      promotes it automatically once its parents finish. A task with no
+      unfinished parent cannot be dependency-parked: it is converted to a
+      sticky ``needs_input`` block so ``all([])`` cannot immediately re-promote
+      it into a retry storm. This is Dale's "Type 2 — dependency blocked".
 
     * ``needs_input`` / ``capability`` / ``None`` — "truly blocked" (Dale's
       "Type 1"). Lands in ``blocked`` for a human. BUT: each time such a task
@@ -5523,10 +5527,25 @@ def block_task(
             else 0
         )
 
-        # Dependency blocks never enter the human ``blocked`` bucket — they
-        # wait in ``todo`` and let ``recompute_ready`` gate on parents. Routing
-        # here (rather than ``blocked``) is what keeps a cron from ever seeing
-        # a dependency-wait as something to "unblock".
+        # Dependency blocks are meaningful only while at least one parent is
+        # unfinished. Parentless tasks (and tasks whose parents are already
+        # terminal) would otherwise be routed to ``todo`` and immediately
+        # re-promoted because ``all([])`` / all-terminal is true, producing an
+        # unbounded block -> promote -> claim loop. Convert that invalid shape
+        # to a sticky human-review block instead.
+        if kind == "dependency":
+            unfinished_parent = conn.execute(
+                "SELECT 1 FROM task_links l "
+                "JOIN tasks p ON p.id = l.parent_id "
+                "WHERE l.child_id = ? "
+                "AND p.status NOT IN ('done', 'archived') LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            if unfinished_parent is None:
+                kind = "needs_input"
+
+        # Valid dependency blocks never enter the human ``blocked`` bucket —
+        # they wait in ``todo`` and let ``recompute_ready`` gate on parents.
         if kind == "dependency":
             cur = conn.execute(
                 """
