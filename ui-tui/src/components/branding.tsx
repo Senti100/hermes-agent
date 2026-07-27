@@ -1,10 +1,10 @@
-import { Box, Text, useStdout } from '@hermes/ink'
+import { Box, RawAnsi, stringWidth, Text, useStdout } from '@hermes/ink'
 import { useEffect, useState } from 'react'
 import unicodeSpinners from 'unicode-animations'
 
 import { artWidth, caduceus, CADUCEUS_WIDTH, logo, LOGO_WIDTH } from '../banner.js'
 import { mix } from '../lib/color.js'
-import { flat } from '../lib/text.js'
+import { flat, sanitizeAnsiForRender, stripAnsi } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { PanelSection, SessionInfo } from '../types.js'
 
@@ -45,6 +45,41 @@ export function ArtLines({ lines }: { lines: [string, string][] }) {
           {text}
         </Text>
       ))}
+    </Box>
+  )
+}
+
+type RawAnsiArt = {
+  lines: string[]
+  width: number
+}
+
+function rawAnsiArt(raw: string): null | RawAnsiArt {
+  if (!raw) {
+    return null
+  }
+
+  const lines = sanitizeAnsiForRender(raw)
+    .split(/\r?\n/)
+    .map(line => line.replace(/\s+$/u, ''))
+
+  while (lines.length && lines.at(-1) === '') {
+    lines.pop()
+  }
+
+  if (!lines.length) {
+    return null
+  }
+
+  const width = Math.max(...lines.map(line => stringWidth(stripAnsi(line))))
+
+  return width > 0 ? { lines, width } : null
+}
+
+function RawAnsiArtLines({ art }: { art: RawAnsiArt }) {
+  return (
+    <Box flexDirection="column" height={art.lines.length} width={art.width}>
+      <RawAnsi lines={art.lines} width={art.width} />
     </Box>
   )
 }
@@ -213,7 +248,9 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
   const term = useStdout().stdout?.columns ?? 100
   const cols = Math.max(20, Math.min(term, maxWidth ?? term))
   const heroLines = caduceus(t.color, t.bannerHero || undefined)
-  const leftW = Math.min((artWidth(heroLines) || CADUCEUS_WIDTH) + 4, Math.floor(cols * 0.4))
+  const rawHero = rawAnsiArt(t.bannerHeroAnsi)
+  const heroW = (rawHero?.width ?? artWidth(heroLines)) || CADUCEUS_WIDTH
+  const leftW = Math.min(heroW + 4, Math.floor(cols * 0.4))
   const wide = cols >= 90 && leftW + 40 < cols
   const w = Math.max(20, wide ? cols - leftW - 14 : cols - 12)
   const lineBudget = Math.max(12, w - 2)
@@ -350,7 +387,7 @@ export function SessionPanel({ info, maxWidth, sid, t }: SessionPanelProps) {
   // hand-rolled widths exactly: usable = (leftW + 2 + w) - gap = leftW + w.
   const heroColumn = wide ? (
     <Box flexDirection="column" width="100%">
-      <ArtLines lines={heroLines} />
+      {rawHero ? <RawAnsiArtLines art={rawHero} /> : <ArtLines lines={heroLines} />}
       <Text />
 
       <Text color={t.color.accent}>
