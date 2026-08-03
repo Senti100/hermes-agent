@@ -13,6 +13,7 @@ Built-in TTS providers:
 - NeuTTS (local, free, no API key): On-device TTS via neutts
 - KittenTTS (local, free, no API key): On-device 25MB model
 - Piper (local, free, no API key): OHF-Voice/piper1-gpl neural VITS, 44 languages
+- Qwen3 TTS (local HTTP): OpenAI-compatible proxy with Base voice cloning
 
 Custom command providers:
 - Users can declare any number of named providers with ``type: command``
@@ -3849,6 +3850,23 @@ def check_tts_requirements() -> bool:
         return _check_kittentts_available()
     if provider == "piper":
         return _check_piper_available()
+    if provider == "qwen3":
+        # Requirements checks are intentionally local and non-invasive: they
+        # verify that the HTTP transport is importable and the configured URL
+        # is dispatchable, but never wake/probe the model server from a status
+        # poll.  Omitted config uses the same loopback default as generation.
+        try:
+            import requests  # noqa: F401
+        except ImportError:
+            return False
+        qwen3_config = (
+            tts_config.get("qwen3", {}) if isinstance(tts_config, dict) else {}
+        )
+        base_url = str(
+            qwen3_config.get("base_url", "http://127.0.0.1:19380")
+        ).strip()
+        parsed = urlparse(base_url)
+        return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
     try:
         from agent.tts_registry import get_provider
@@ -4561,7 +4579,7 @@ TTS_SCHEMA = {
                 "description": (
                     "Optional TTS provider override. Accepts built-in names "
                     "(edge, openai, elevenlabs, minimax, xai, mistral, gemini, "
-                    "neutts, kittentts, piper), user-declared command provider "
+                    "neutts, kittentts, piper, qwen3), user-declared command provider "
                     "names from tts.providers.<name>, or plugin-registered names. "
                     "When omitted, the configured tts.provider from config.yaml is used."
                 )
