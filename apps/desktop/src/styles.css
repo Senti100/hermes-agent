@@ -384,6 +384,14 @@
     --ui-inline-code-background: color-mix(in srgb, #141414 5%, transparent);
     --ui-inline-code-foreground: color-mix(in srgb, #141414 88%, transparent);
     --ui-selection-background: color-mix(in srgb, #ffd24a 55%, transparent);
+    --dt-wallpaper-image: none;
+    --dt-wallpaper-position: center center;
+    --dt-wallpaper-size: cover;
+    --dt-wallpaper-opacity: 0;
+    --dt-wallpaper-overlay: transparent;
+    --dt-wallpaper-filter: none;
+    --dt-wallpaper-front-filter: none;
+    --dt-wallpaper-scale: 1;
 
     --dt-background: var(--ui-bg-chrome);
     --dt-foreground: var(--ui-text-primary);
@@ -752,6 +760,44 @@
     -webkit-user-select: none;
     user-select: none;
     -webkit-font-smoothing: antialiased;
+  }
+
+  #root {
+    position: relative;
+    isolation: isolate;
+    background: transparent;
+  }
+
+  :root[data-hermes-wallpaper='true'] #root::before,
+  :root[data-hermes-wallpaper='true'] #root::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  :root[data-hermes-wallpaper='true'] #root::before {
+    z-index: 0;
+    background-image: var(--dt-wallpaper-image);
+    background-position: var(--dt-wallpaper-position);
+    background-repeat: no-repeat;
+    background-size: var(--dt-wallpaper-size);
+    filter: var(--dt-wallpaper-filter);
+    opacity: var(--dt-wallpaper-opacity);
+    transform: scale(var(--dt-wallpaper-scale));
+    transform-origin: center;
+  }
+
+  :root[data-hermes-wallpaper='true'] #root::after {
+    z-index: 0;
+    background: var(--dt-wallpaper-overlay);
+    -webkit-backdrop-filter: var(--dt-wallpaper-front-filter);
+    backdrop-filter: var(--dt-wallpaper-front-filter);
+  }
+
+  :root[data-hermes-wallpaper='true'] #root > * {
+    position: relative;
+    z-index: 1;
   }
 
   button,

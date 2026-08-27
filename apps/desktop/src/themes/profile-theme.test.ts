@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { modePref, skinPref } from './context'
-import { DEFAULT_SKIN_NAME } from './presets'
+import { applyWallpaper, modePref, skinPref, SUPPRESSED_WALLPAPER_WINDOW_TYPES } from './context'
+import { BUILTIN_THEMES, DEFAULT_SKIN_NAME } from './presets'
 
 // Skin and mode share one per-profile contract, so assert it once over both.
 interface Pref {
@@ -15,7 +15,7 @@ const cases = [
     pref: skinPref as unknown as Pref,
     fallback: DEFAULT_SKIN_NAME,
     a: 'ember',
-    b: 'catppuccin',
+    b: 'senti-100-packet-noir',
     junk: 'nope'
   },
   { name: 'mode', pref: modePref as unknown as Pref, fallback: 'system', a: 'dark', b: 'light', junk: 'dusk' }
@@ -63,4 +63,57 @@ describe('a profile that has never chosen a mode', () => {
     modePref.assign('default', 'light')
     expect(modePref.resolve('default')).toBe('light')
   })
+})
+
+describe('wallpaper surface compatibility', () => {
+  beforeEach(() => {
+    delete document.documentElement.dataset.hermesWallpaper
+    applyWallpaper(document.documentElement, undefined)
+  })
+
+  it('covers the complete current transparent auxiliary route inventory', () => {
+    expect(SUPPRESSED_WALLPAPER_WINDOW_TYPES).toEqual(['overlay', 'quick', 'wake', 'hud'])
+  })
+
+  it('bridges glass surfaces to the current shell variables and clears them together', () => {
+    const root = document.documentElement
+    const wallpaper = BUILTIN_THEMES['senti-100-packet-noir'].wallpaper
+
+    expect(wallpaper).toBeDefined()
+    applyWallpaper(root, wallpaper)
+
+    expect(root.dataset.hermesWallpaper).toBe('true')
+    expect(root.style.getPropertyValue('--ui-bg-chrome')).toBe(wallpaper?.backgroundSurface)
+    expect(root.style.getPropertyValue('--ui-bg-editor')).toBe(wallpaper?.editorSurface)
+    expect(root.style.getPropertyValue('--ui-bg-sidebar')).toBe(wallpaper?.sidebarSurface)
+    expect(root.style.getPropertyValue('--ui-bg-card')).toBe(wallpaper?.cardSurface)
+    expect(root.style.getPropertyValue('--ui-bg-elevated')).toBe(wallpaper?.popoverSurface)
+    expect(root.style.getPropertyValue('--ui-chat-bubble-opaque-background')).toBe(wallpaper?.bubbleSurface)
+    expect(root.style.getPropertyValue('--dt-wallpaper-filter')).toContain('blur(3px)')
+
+    applyWallpaper(root, undefined)
+
+    expect(root.dataset.hermesWallpaper).toBeUndefined()
+    expect(root.style.getPropertyValue('--ui-bg-chrome')).toBe('')
+    expect(root.style.getPropertyValue('--ui-bg-editor')).toBe('')
+    expect(root.style.getPropertyValue('--ui-bg-sidebar')).toBe('')
+    expect(root.style.getPropertyValue('--ui-bg-elevated')).toBe('')
+    expect(root.style.getPropertyValue('--dt-wallpaper-image')).toBe('')
+  })
+
+  it.each(SUPPRESSED_WALLPAPER_WINDOW_TYPES.map(winType => `?win=${winType}`))(
+    'keeps the %s auxiliary window transparent', search => {
+      const root = document.documentElement
+      const wallpaper = BUILTIN_THEMES['senti-100-packet-noir'].wallpaper
+
+      applyWallpaper(root, wallpaper)
+      applyWallpaper(root, wallpaper, search)
+
+      expect(root.dataset.hermesWallpaper).toBeUndefined()
+      expect(root.style.getPropertyValue('--dt-wallpaper-image')).toBe('')
+      expect(root.style.getPropertyValue('--dt-wallpaper-overlay')).toBe('')
+      expect(root.style.getPropertyValue('--ui-chat-surface-background')).toBe('')
+      expect(root.style.getPropertyValue('--ui-bg-elevated')).toBe('')
+    }
+  )
 })

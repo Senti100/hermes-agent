@@ -23,7 +23,7 @@ import { $backendThemes, $pendingSkinApply } from './backend-sync'
 import { ensureContrast, harmonize, hexToRgb, mix, readableOn } from './color'
 import { BUILTIN_THEME_LIST, DEFAULT_SKIN_NAME, DEFAULT_TYPOGRAPHY, nousTheme } from './presets'
 import { retintTheme } from './retint'
-import type { DesktopTheme, DesktopThemeColors } from './types'
+import type { DesktopTheme, DesktopThemeColors, DesktopThemeWallpaper } from './types'
 import { $userThemes, listAllThemes, resolveTheme } from './user-themes'
 
 // Legacy global skin (pre per-profile themes). Still the inheritance fallback
@@ -194,6 +194,96 @@ const mixesFor = (isDark: boolean): Record<string, string> => ({
   '--theme-mix-bubble': isDark ? '46%' : '0%'
 })
 
+const WALLPAPER_SURFACE_VARS: Array<[keyof DesktopThemeWallpaper, readonly string[]]> = [
+  ['backgroundSurface', ['--dt-background', '--ui-bg-chrome']],
+  ['chatSurface', ['--ui-chat-surface-background']],
+  ['editorSurface', ['--ui-editor-surface-background', '--ui-bg-editor']],
+  ['sidebarSurface', ['--ui-sidebar-surface-background', '--ui-bg-sidebar']],
+  ['cardSurface', ['--dt-card', '--ui-bg-card']],
+  ['popoverSurface', ['--dt-popover', '--ui-bg-elevated']],
+  ['bubbleSurface', ['--ui-chat-bubble-background', '--ui-chat-bubble-opaque-background']]
+]
+
+const WALLPAPER_LAYER_VARS = [
+  '--dt-wallpaper-image',
+  '--dt-wallpaper-position',
+  '--dt-wallpaper-size',
+  '--dt-wallpaper-opacity',
+  '--dt-wallpaper-overlay',
+  '--dt-wallpaper-filter',
+  '--dt-wallpaper-scale',
+  '--dt-wallpaper-front-filter'
+] as const
+
+const cssUrl = (value: string): string => {
+  if (
+    !value ||
+    value === 'none' ||
+    value.startsWith('url(') ||
+    value.startsWith('linear-gradient(') ||
+    value.startsWith('radial-gradient(')
+  ) {
+    return value || 'none'
+  }
+
+  return `url("${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+}
+
+// Current transparent auxiliary BrowserWindow routes in the Electron source:
+// `overlay`, `quick`, `wake`, and the HUD shell. `secondary` stays a real chat
+// window and keeps the wallpaper/glass surface treatment.
+export const SUPPRESSED_WALLPAPER_WINDOW_TYPES = ['overlay', 'quick', 'wake', 'hud'] as const
+
+export const isWallpaperSuppressedWindow = (search: string): boolean => {
+  const windowType = new URLSearchParams(search).get('win')
+
+  return SUPPRESSED_WALLPAPER_WINDOW_TYPES.includes(windowType as (typeof SUPPRESSED_WALLPAPER_WINDOW_TYPES)[number])
+}
+
+export const applyWallpaper = (
+  root: HTMLElement,
+  wallpaper: DesktopTheme['wallpaper'],
+  search = typeof window === 'undefined' ? '' : window.location.search
+) => {
+  if (!wallpaper || isWallpaperSuppressedWindow(search)) {
+    delete root.dataset.hermesWallpaper
+
+    for (const key of WALLPAPER_LAYER_VARS) {
+      root.style.removeProperty(key)
+    }
+
+    for (const [, cssVars] of WALLPAPER_SURFACE_VARS) {
+      for (const cssVar of cssVars) {
+        root.style.removeProperty(cssVar)
+      }
+    }
+
+    return
+  }
+
+  root.dataset.hermesWallpaper = 'true'
+  root.style.setProperty('--dt-wallpaper-image', cssUrl(wallpaper.image))
+  root.style.setProperty('--dt-wallpaper-position', wallpaper.position ?? 'center center')
+  root.style.setProperty('--dt-wallpaper-size', wallpaper.size ?? 'cover')
+  root.style.setProperty('--dt-wallpaper-opacity', String(wallpaper.opacity ?? 1))
+  root.style.setProperty('--dt-wallpaper-overlay', wallpaper.overlay ?? 'transparent')
+  root.style.setProperty('--dt-wallpaper-filter', wallpaper.filter ?? 'none')
+  root.style.setProperty('--dt-wallpaper-scale', String(wallpaper.scale ?? 1))
+  root.style.setProperty('--dt-wallpaper-front-filter', wallpaper.frontFilter ?? 'none')
+
+  for (const [field, cssVars] of WALLPAPER_SURFACE_VARS) {
+    const value = wallpaper[field]
+
+    for (const cssVar of cssVars) {
+      if (value) {
+        root.style.setProperty(cssVar, String(value))
+      } else {
+        root.style.removeProperty(cssVar)
+      }
+    }
+  }
+}
+
 function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
   if (typeof document === 'undefined') {
     return
@@ -271,6 +361,8 @@ function applyTheme(theme: DesktopTheme, mode: 'light' | 'dark') {
   for (const [k, v] of Object.entries({ ...seeds, ...mixesFor(isDark), ...palette })) {
     root.style.setProperty(k, v)
   }
+
+  applyWallpaper(root, theme.wallpaper)
 
   const chromeBg = chromeBackground(c.background, isDark)
 
