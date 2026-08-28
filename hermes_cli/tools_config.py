@@ -403,6 +403,13 @@ TOOL_CATEGORIES = {
                 "post_setup": "piper",
             },
             {
+                "name": "Qwen3 TTS (local proxy)",
+                "badge": "local · free",
+                "tag": "OpenAI-compatible local proxy with optional Base voice cloning",
+                "env_vars": [],
+                "tts_provider": "qwen3",
+            },
+            {
                 "name": "DeepInfra TTS",
                 "badge": "paid",
                 "tag": "Chatterbox, Qwen3-TTS, … — live catalog from api.deepinfra.com",

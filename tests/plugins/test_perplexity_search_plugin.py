@@ -7,6 +7,7 @@ from email.message import Message
 
 from plugins.perplexity_search import register
 from plugins.perplexity_search import tools
+from tools.registry import ToolRegistry
 
 
 class _DummyContext:
@@ -28,6 +29,26 @@ def test_perplexity_plugin_registers_tool():
     assert call["toolset"] == "perplexity_search"
     assert call["requires_env"] == ["PERPLEXITY_API_KEY"]
     assert call["check_fn"] is tools._check_perplexity_available
+
+
+def test_perplexity_schema_projects_through_real_tool_registry():
+    registry = ToolRegistry()
+    registry.register(
+        name="perplexity_search",
+        toolset="perplexity_search",
+        schema=tools.PERPLEXITY_SEARCH_SCHEMA,
+        handler=tools._handle_perplexity_search,
+        check_fn=lambda: True,
+    )
+
+    definitions = registry.get_definitions({"perplexity_search"})
+
+    assert len(definitions) == 1
+    assert definitions[0]["type"] == "function"
+    function = definitions[0]["function"]
+    assert function["name"] == "perplexity_search"
+    assert function["parameters"]["required"] == ["query"]
+    assert "function" not in function
 
 
 def test_check_perplexity_available_uses_env(monkeypatch):
@@ -61,15 +82,19 @@ def test_perplexity_search_success(monkeypatch):
             return False
 
         def read(self):
-            return json.dumps(
-                {
-                    "model": "sonar",
-                    "choices": [{"message": {"content": "Answer with citations."}}],
-                    "citations": ["https://example.com/source"],
-                    "search_results": [{"title": "Source", "url": "https://example.com/source"}],
-                    "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-                }
-            ).encode()
+            return json.dumps({
+                "model": "sonar",
+                "choices": [{"message": {"content": "Answer with citations."}}],
+                "citations": ["https://example.com/source"],
+                "search_results": [
+                    {"title": "Source", "url": "https://example.com/source"}
+                ],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 5,
+                    "total_tokens": 15,
+                },
+            }).encode()
 
     def fake_urlopen(request, timeout):
         captured["timeout"] = timeout
@@ -80,16 +105,14 @@ def test_perplexity_search_success(monkeypatch):
     monkeypatch.setattr(tools.urllib.request, "urlopen", fake_urlopen)
 
     result = json.loads(
-        tools._handle_perplexity_search(
-            {
-                "query": "What is Hermes Agent?",
-                "max_tokens": 1,
-                "temperature": 9,
-                "search_recency_filter": "week",
-                "search_domain_filter": ["example.com"],
-                "return_related_questions": "true",
-            }
-        )
+        tools._handle_perplexity_search({
+            "query": "What is Hermes Agent?",
+            "max_tokens": 1,
+            "temperature": 9,
+            "search_recency_filter": "week",
+            "search_domain_filter": ["example.com"],
+            "return_related_questions": "true",
+        })
     )
 
     assert result["success"] is True
@@ -97,7 +120,11 @@ def test_perplexity_search_success(monkeypatch):
     assert result["model"] == "sonar"
     assert result["answer"] == "Answer with citations."
     assert result["citations"] == ["https://example.com/source"]
-    assert result["usage"] == {"completion_tokens": 5, "prompt_tokens": 10, "total_tokens": 15}
+    assert result["usage"] == {
+        "completion_tokens": 5,
+        "prompt_tokens": 10,
+        "total_tokens": 15,
+    }
     assert captured["payload"]["max_tokens"] == 16  # Perplexity minimum is enforced.
     assert captured["payload"]["temperature"] == 2.0
     assert captured["payload"]["search_recency_filter"] == "week"
@@ -116,7 +143,9 @@ def test_perplexity_search_http_error_is_sanitized(monkeypatch):
             code=400,
             msg="Bad Request",
             hdrs=Message(),
-            fp=io.BytesIO(json.dumps({"error": {"message": "bad max_tokens"}}).encode()),
+            fp=io.BytesIO(
+                json.dumps({"error": {"message": "bad max_tokens"}}).encode()
+            ),
         )
 
     monkeypatch.setattr(tools.urllib.request, "urlopen", fake_urlopen_with_body)

@@ -24,61 +24,58 @@ _USAGE_KEYS = {
 }
 
 PERPLEXITY_SEARCH_SCHEMA = {
-    "type": "function",
-    "function": {
-        "name": "perplexity_search",
-        "description": (
-            "Search the live web with Perplexity Sonar and return a synthesized "
-            "answer with citations. Use this when you need a second current-search "
-            "lane or source-backed research beyond the default web_search tool."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Research/search question to ask Perplexity.",
-                },
-                "model": {
-                    "type": "string",
-                    "description": (
-                        "Perplexity model id. Defaults to sonar. Common options include "
-                        "sonar, sonar-pro, sonar-reasoning, and sonar-deep-research when "
-                        "available on the account."
-                    ),
-                },
-                "max_tokens": {
-                    "type": "integer",
-                    "minimum": 16,
-                    "maximum": 8000,
-                    "description": "Maximum completion tokens. Perplexity requires at least 16. Default: 1024.",
-                },
-                "temperature": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 2,
-                    "description": "Sampling temperature. Default: 0.2 for research stability.",
-                },
-                "search_domain_filter": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": (
-                        "Optional Perplexity domain filter. Use bare domains to include "
-                        "or prefix with '-' to exclude, e.g. ['fcc.gov'] or ['-reddit.com']."
-                    ),
-                },
-                "search_recency_filter": {
-                    "type": "string",
-                    "enum": sorted(_ALLOWED_RECENCY),
-                    "description": "Optional recency filter: day, week, month, or year.",
-                },
-                "return_related_questions": {
-                    "type": "boolean",
-                    "description": "Whether to ask Perplexity for related questions. Default: false.",
-                },
+    "name": "perplexity_search",
+    "description": (
+        "Search the live web with Perplexity Sonar and return a synthesized "
+        "answer with citations. Use this when you need a second current-search "
+        "lane or source-backed research beyond the default web_search tool."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Research/search question to ask Perplexity.",
             },
-            "required": ["query"],
+            "model": {
+                "type": "string",
+                "description": (
+                    "Perplexity model id. Defaults to sonar. Common options include "
+                    "sonar, sonar-pro, sonar-reasoning, and sonar-deep-research when "
+                    "available on the account."
+                ),
+            },
+            "max_tokens": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 8000,
+                "description": "Maximum completion tokens. Perplexity requires at least 16. Default: 1024.",
+            },
+            "temperature": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2,
+                "description": "Sampling temperature. Default: 0.2 for research stability.",
+            },
+            "search_domain_filter": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional Perplexity domain filter. Use bare domains to include "
+                    "or prefix with '-' to exclude, e.g. ['fcc.gov'] or ['-reddit.com']."
+                ),
+            },
+            "search_recency_filter": {
+                "type": "string",
+                "enum": sorted(_ALLOWED_RECENCY),
+                "description": "Optional recency filter: day, week, month, or year.",
+            },
+            "return_related_questions": {
+                "type": "boolean",
+                "description": "Whether to ask Perplexity for related questions. Default: false.",
+            },
         },
+        "required": ["query"],
     },
 }
 
@@ -157,11 +154,17 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
 
     api_key = os.getenv("PERPLEXITY_API_KEY", "").strip()
     if not api_key:
-        return tool_error("PERPLEXITY_API_KEY is not set for this Hermes profile", success=False)
+        return tool_error(
+            "PERPLEXITY_API_KEY is not set for this Hermes profile", success=False
+        )
 
     model = str(args.get("model") or _DEFAULT_MODEL).strip() or _DEFAULT_MODEL
-    max_tokens = _coerce_int(args.get("max_tokens"), default=1024, minimum=16, maximum=8000)
-    temperature = _coerce_float(args.get("temperature"), default=0.2, minimum=0.0, maximum=2.0)
+    max_tokens = _coerce_int(
+        args.get("max_tokens"), default=1024, minimum=16, maximum=8000
+    )
+    temperature = _coerce_float(
+        args.get("temperature"), default=0.2, minimum=0.0, maximum=2.0
+    )
 
     payload: dict[str, Any] = {
         "model": model,
@@ -193,7 +196,9 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
         payload["search_recency_filter"] = recency
 
     if "return_related_questions" in args:
-        payload["return_related_questions"] = _coerce_bool(args.get("return_related_questions"))
+        payload["return_related_questions"] = _coerce_bool(
+            args.get("return_related_questions")
+        )
 
     request = urllib.request.Request(
         _API_URL,
@@ -218,12 +223,16 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
             status_code=exc.code,
         )
     except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
-        return tool_error(f"Perplexity request failed: {type(exc).__name__}: {exc}", success=False)
+        return tool_error(
+            f"Perplexity request failed: {type(exc).__name__}: {exc}", success=False
+        )
     except json.JSONDecodeError as exc:
         return tool_error(f"Perplexity returned invalid JSON: {exc}", success=False)
 
     choices = data.get("choices") if isinstance(data, dict) else None
-    message = (choices[0].get("message") if choices and isinstance(choices[0], dict) else {}) or {}
+    message = (
+        choices[0].get("message") if choices and isinstance(choices[0], dict) else {}
+    ) or {}
     answer = str(message.get("content") or "").strip()
 
     return tool_result(

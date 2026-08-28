@@ -5,17 +5,21 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 import tools.tts_tool as tts_tool
 
 
 def test_qwen3_requirements_accept_default_loopback_without_network() -> None:
     """Status polling must expose Qwen3 without probing or waking its server."""
-    with patch.object(
-        tts_tool,
-        "_load_tts_config",
-        return_value={"provider": "qwen3", "qwen3": {}},
-    ), patch("requests.get", side_effect=AssertionError("network probe forbidden")), patch(
-        "requests.post", side_effect=AssertionError("network probe forbidden")
+    with (
+        patch.object(
+            tts_tool,
+            "_load_tts_config",
+            return_value={"provider": "qwen3", "qwen3": {}},
+        ),
+        patch("requests.get", side_effect=AssertionError("network probe forbidden")),
+        patch("requests.post", side_effect=AssertionError("network probe forbidden")),
     ):
         assert tts_tool.check_tts_requirements() is True
 
@@ -44,15 +48,14 @@ def test_generate_qwen3_tts_sends_clone_identity_payload(tmp_path: Path) -> None
         def raise_for_status() -> None:
             return None
 
-    def _post(url, *, headers, json, timeout):
-        calls.append(
-            {
-                "url": url,
-                "headers": headers,
-                "json": json,
-                "timeout": timeout,
-            }
-        )
+    def _post(url, *, headers, json, timeout, stream):
+        calls.append({
+            "url": url,
+            "headers": headers,
+            "json": json,
+            "timeout": timeout,
+            "stream": stream,
+        })
         return _Response()
 
     config = {
@@ -80,9 +83,51 @@ def test_generate_qwen3_tts_sends_clone_identity_payload(tmp_path: Path) -> None
     call = calls[0]
     assert call["url"] == "http://127.0.0.1:19380/v1/audio/speech"
     assert call["timeout"] == 17
+    assert call["stream"] is True
     assert call["headers"] == {"Content-Type": "application/json"}
     assert call["json"]["input"] == "Testing the locked voice."
     assert call["json"]["ref_audio"] == "/srv/voices/carlotta.wav"
     assert call["json"]["refAudio"] == "/srv/voices/carlotta.wav"
     assert call["json"]["ref_text"] == "The exact locked reference transcript."
     assert call["json"]["refText"] == "The exact locked reference transcript."
+
+
+def test_generate_qwen3_tts_rejects_oversized_stream_and_closes_response(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "voice.wav"
+
+    class _Response:
+        closed = False
+
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        @staticmethod
+        def iter_content(*, chunk_size):
+            assert chunk_size == tts_tool.TTS_RESPONSE_BODY_CHUNK_BYTES
+            yield b"12345"
+            yield b"6789"
+
+        @classmethod
+        def close(cls) -> None:
+            cls.closed = True
+
+    def _post(url, *, headers, json, timeout, stream):
+        assert stream is True
+        return _Response()
+
+    with (
+        patch("requests.post", side_effect=_post),
+        patch.object(
+            tts_tool,
+            "TTS_RESPONSE_BODY_LIMIT_BYTES",
+            8,
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="Qwen3 TTS response exceeds 8 bytes"):
+            tts_tool._generate_qwen3_tts("Testing.", str(output_path), {"qwen3": {}})
+
+    assert _Response.closed is True
+    assert not output_path.exists()
