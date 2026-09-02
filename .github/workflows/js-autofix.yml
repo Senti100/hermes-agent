@@ -56,6 +56,9 @@ concurrency:
 
 jobs:
   generate-patch:
+    # This privileged maintainer automation is configured for upstream. Forks
+    # retain ordinary PR CI but do not attempt bot PR creation or auto-merge.
+    if: github.repository == 'NousResearch/hermes-agent'
     name: Generate eslint --fix patch
     runs-on: ubuntu-latest
     timeout-minutes: 5
