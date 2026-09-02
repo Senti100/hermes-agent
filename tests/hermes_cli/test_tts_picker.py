@@ -43,13 +43,15 @@ def _reset_registry():
 class TestPluginTTSProviders:
     """``_plugin_tts_providers()`` returns picker-row dicts."""
 
+
+
+
     def test_skips_providers_with_no_name(self):
         """Defense in depth: a provider with no .name attribute is skipped
         rather than crashing the picker."""
 
         class _NoName:
             display_name = "Bogus"
-
             def get_setup_schema(self):
                 return {"name": "Bogus"}
 
@@ -61,6 +63,7 @@ class TestPluginTTSProviders:
         finally:
             tts_registry._providers.pop("bogus", None)  # type: ignore[arg-type]
 
+
     def test_minimal_schema_uses_display_name(self):
         """A provider with no setup_schema override gets a row built from
         ``display_name`` and ``name`` only."""
@@ -70,6 +73,7 @@ class TestPluginTTSProviders:
         assert rows[0]["name"] == "Minimal"  # display_name default
         assert rows[0]["tts_provider"] == "minimal"
         assert rows[0]["env_vars"] == []
+
 
 
 class TestVisibleProvidersInjectsTTSPlugins:
@@ -113,3 +117,4 @@ class TestVisibleProvidersInjectsTTSPlugins:
         from hermes_cli import web_server
 
         assert "qwen3" in web_server._SCHEMA_OVERRIDES["tts.provider"]["options"]
+

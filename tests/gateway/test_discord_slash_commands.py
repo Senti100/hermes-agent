@@ -303,9 +303,15 @@ async def test_slash_command_registration_stays_under_discord_limit(adapter):
     for native in ("status", "stop", "new", "model", "help"):
         assert native in tree_names, f"/{native} (native) was dropped by the cap"
 
+    # Senti's three operational aliases outrank plugins, while ordinary aliases
+    # do not consume most of the fixed budget before plugins are considered.
+    for alias in ("fork", "q", "set-home"):
+        assert alias in tree_names, f"priority alias /{alias} was dropped by the cap"
+
     # The cap must actually have dropped overflow — not every plugin fit.
     registered_plugins = [n for n in tree_names if n.startswith("plug")]
     assert len(registered_plugins) < 200, "cap did not drop any overflow commands"
+    assert len(registered_plugins) >= 20, "ordinary aliases crowded plugin commands out of Discord"
 
 
 # ------------------------------------------------------------------
