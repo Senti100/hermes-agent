@@ -3173,6 +3173,9 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
         "output_format": output_format,
         "language": language,
     }
+    speed = tts_config.get("speed", qwen3_config.get("speed"))
+    if speed is not None:
+        payload["speed"] = max(0.25, min(4.0, float(speed)))
     if model:
         payload["model"] = model
     if voice:
@@ -3191,13 +3194,7 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    response = requests.post(
-        url,
-        headers=headers,
-        json=payload,
-        timeout=timeout,
-        stream=True,
-    )
+    response = requests.post(url, headers=headers, json=payload, timeout=timeout, stream=True)
     try:
         response.raise_for_status()
     except Exception:
