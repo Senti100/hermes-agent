@@ -6130,11 +6130,6 @@ class DiscordAdapter(BasePlatformAdapter):
                 if cmd_def is not None:
                     _register_registry_name(cmd_def, alias)
 
-            for cmd_def in available_commands:
-                for alias in cmd_def.aliases:
-                    if alias not in priority_aliases:
-                        _register_registry_name(cmd_def, alias)
-
             logger.debug(
                 "Discord auto-registered %d commands and aliases from COMMAND_REGISTRY",
                 len(already_registered),
@@ -6173,6 +6168,17 @@ class DiscordAdapter(BasePlatformAdapter):
             logger.warning(
                 "Discord auto-register from plugin commands failed: %s", e
             )
+
+        # Non-priority aliases are convenience spellings. Fill them only after
+        # plugin commands so a large documented alias set cannot crowd actual
+        # plugin capabilities out of Discord's fixed command budget.
+        try:
+            for cmd_def in available_commands:
+                for alias in cmd_def.aliases:
+                    if alias not in priority_aliases:
+                        _register_registry_name(cmd_def, alias)
+        except Exception as e:
+            logger.warning("Discord alias registration failed: %s", e)
 
         # Register skills under a single /skill command group with category
         # subcommand groups.  This uses 1 top-level slot instead of N,

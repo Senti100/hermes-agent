@@ -3,16 +3,22 @@
 from __future__ import annotations
 
 import json
-import os
 import socket
 import urllib.error
 import urllib.request
 from typing import Any
 
+from hermes_cli.config import get_env_value
+from hermes_cli.urllib_security import open_credentialed_url
 from tools.registry import tool_error, tool_result
 
 _API_URL = "https://api.perplexity.ai/chat/completions"
 _DEFAULT_MODEL = "sonar"
+_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+_MAX_ANSWER_CHARS = 50_000
+_MAX_CITATIONS = 100
+_MAX_SEARCH_RESULTS = 50
+_MAX_RELATED_QUESTIONS = 20
 _ALLOWED_RECENCY = {"day", "week", "month", "year"}
 _USAGE_KEYS = {
     "prompt_tokens",
@@ -85,7 +91,7 @@ PERPLEXITY_SEARCH_SCHEMA = {
 
 def _check_perplexity_available() -> bool:
     """Return True when the profile has a Perplexity API key in the environment."""
-    return bool(os.getenv("PERPLEXITY_API_KEY", "").strip())
+    return bool((get_env_value("PERPLEXITY_API_KEY") or "").strip())
 
 
 def _coerce_int(raw: Any, *, default: int, minimum: int, maximum: int) -> int:
@@ -149,13 +155,45 @@ def _usage_summary(usage: Any) -> dict[str, Any]:
     return {key: usage[key] for key in sorted(_USAGE_KEYS) if key in usage}
 
 
+def _read_bounded_response(response: Any, *, limit: int = _MAX_RESPONSE_BYTES) -> bytes:
+    """Read one provider response without allowing unbounded memory growth."""
+    raw = response.read(limit + 1)
+    if len(raw) > limit:
+        raise ValueError(f"Perplexity response exceeds {limit} bytes")
+    return raw
+
+
+def _bounded_strings(value: Any, *, count: int, chars: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item)[:chars] for item in value[:count]]
+
+
+def _bounded_results(value: Any) -> list[dict[str, Any]]:
+    """Keep search-result metadata useful while bounding nested provider data."""
+    if not isinstance(value, list):
+        return []
+    bounded: list[dict[str, Any]] = []
+    for item in value[:_MAX_SEARCH_RESULTS]:
+        if not isinstance(item, dict):
+            continue
+        bounded.append(
+            {
+                str(key)[:100]: str(raw)[:10_000]
+                for key, raw in list(item.items())[:30]
+                if raw is not None
+            }
+        )
+    return bounded
+
+
 def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
     """Run a Perplexity Sonar query and return answer/citation JSON."""
     query = str(args.get("query") or args.get("q") or "").strip()
     if not query:
         return tool_error("query is required", success=False)
 
-    api_key = os.getenv("PERPLEXITY_API_KEY", "").strip()
+    api_key = (get_env_value("PERPLEXITY_API_KEY") or "").strip()
     if not api_key:
         return tool_error("PERPLEXITY_API_KEY is not set for this Hermes profile", success=False)
 
@@ -207,8 +245,8 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            raw = response.read().decode("utf-8", "replace")
+        with open_credentialed_url(request, timeout=60) as response:
+            raw = _read_bounded_response(response).decode("utf-8", "replace")
             data = json.loads(raw)
     except urllib.error.HTTPError as exc:
         body = exc.read(2000).decode("utf-8", "replace")
@@ -221,10 +259,12 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
         return tool_error(f"Perplexity request failed: {type(exc).__name__}: {exc}", success=False)
     except json.JSONDecodeError as exc:
         return tool_error(f"Perplexity returned invalid JSON: {exc}", success=False)
+    except ValueError as exc:
+        return tool_error(str(exc), success=False)
 
     choices = data.get("choices") if isinstance(data, dict) else None
     message = (choices[0].get("message") if choices and isinstance(choices[0], dict) else {}) or {}
-    answer = str(message.get("content") or "").strip()
+    answer = str(message.get("content") or "").strip()[:_MAX_ANSWER_CHARS]
 
     return tool_result(
         success=True,
@@ -232,8 +272,10 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
         model=data.get("model") or model,
         query=query,
         answer=answer,
-        citations=data.get("citations") or [],
-        search_results=data.get("search_results") or [],
-        related_questions=data.get("related_questions") or [],
+        citations=_bounded_strings(data.get("citations"), count=_MAX_CITATIONS, chars=2_048),
+        search_results=_bounded_results(data.get("search_results")),
+        related_questions=_bounded_strings(
+            data.get("related_questions"), count=_MAX_RELATED_QUESTIONS, chars=1_000
+        ),
         usage=_usage_summary(data.get("usage")),
     )

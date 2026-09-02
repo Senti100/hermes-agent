@@ -44,13 +44,21 @@ def test_generate_qwen3_tts_sends_clone_identity_payload(tmp_path: Path) -> None
         def raise_for_status() -> None:
             return None
 
-    def _post(url, *, headers, json, timeout):
+        def iter_content(self, chunk_size):
+            assert chunk_size == tts_tool.TTS_RESPONSE_BODY_CHUNK_BYTES
+            yield self.content
+
+        def close(self) -> None:
+            return None
+
+    def _post(url, *, headers, json, timeout, stream):
         calls.append(
             {
                 "url": url,
                 "headers": headers,
                 "json": json,
                 "timeout": timeout,
+                "stream": stream,
             }
         )
         return _Response()
@@ -66,7 +74,8 @@ def test_generate_qwen3_tts_sends_clone_identity_payload(tmp_path: Path) -> None
             "ref_audio": "/srv/voices/carlotta.wav",
             "ref_text": "The exact locked reference transcript.",
             "api_key_env": "",
-        }
+        },
+        "speed": 1.25,
     }
 
     with patch("requests.post", side_effect=_post):
@@ -80,9 +89,41 @@ def test_generate_qwen3_tts_sends_clone_identity_payload(tmp_path: Path) -> None
     call = calls[0]
     assert call["url"] == "http://127.0.0.1:19380/v1/audio/speech"
     assert call["timeout"] == 17
+    assert call["stream"] is True
     assert call["headers"] == {"Content-Type": "application/json"}
     assert call["json"]["input"] == "Testing the locked voice."
     assert call["json"]["ref_audio"] == "/srv/voices/carlotta.wav"
     assert call["json"]["refAudio"] == "/srv/voices/carlotta.wav"
     assert call["json"]["ref_text"] == "The exact locked reference transcript."
     assert call["json"]["refText"] == "The exact locked reference transcript."
+    assert call["json"]["speed"] == 1.25
+
+
+def test_generate_qwen3_tts_rejects_oversized_response(tmp_path: Path) -> None:
+    output_path = tmp_path / "voice.wav"
+
+    class _Response:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        def iter_content(self, chunk_size):
+            assert chunk_size == tts_tool.TTS_RESPONSE_BODY_CHUNK_BYTES
+            yield b"x" * 5
+            yield b"y" * 5
+
+        def close(self) -> None:
+            return None
+
+    config = {"qwen3": {"api_key_env": ""}}
+    with patch("requests.post", return_value=_Response()), patch.object(
+        tts_tool, "TTS_RESPONSE_BODY_LIMIT_BYTES", 8
+    ):
+        try:
+            tts_tool._generate_qwen3_tts("hello", str(output_path), config)
+        except RuntimeError as exc:
+            assert "exceeds 8 bytes" in str(exc)
+        else:
+            raise AssertionError("oversized Qwen3 response was accepted")
+
+    assert not output_path.exists()

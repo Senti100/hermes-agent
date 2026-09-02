@@ -3173,6 +3173,9 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
         "output_format": output_format,
         "language": language,
     }
+    speed = tts_config.get("speed", qwen3_config.get("speed"))
+    if speed is not None:
+        payload["speed"] = max(0.25, min(4.0, float(speed)))
     if model:
         payload["model"] = model
     if voice:
@@ -3191,7 +3194,7 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    response = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    response = requests.post(url, headers=headers, json=payload, timeout=timeout, stream=True)
     response.raise_for_status()
 
     # Proxy returns WAV; write to a WAV path first, then convert/rename if needed.
@@ -3199,8 +3202,7 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
     if not output_path.endswith(".wav"):
         wav_path = output_path.rsplit(".", 1)[0] + ".wav"
 
-    with open(wav_path, "wb") as f:
-        f.write(response.content)
+    _write_tts_response_to_file(response, wav_path, label="Qwen3 TTS")
 
     if wav_path != output_path:
         ffmpeg = shutil.which("ffmpeg")
