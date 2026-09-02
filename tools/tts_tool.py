@@ -3195,7 +3195,11 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
         headers["Authorization"] = f"Bearer {api_key}"
 
     response = requests.post(url, headers=headers, json=payload, timeout=timeout, stream=True)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except Exception:
+        _close_response(response)
+        raise
 
     # Proxy returns WAV; write to a WAV path first, then convert/rename if needed.
     wav_path = output_path

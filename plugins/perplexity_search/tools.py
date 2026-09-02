@@ -30,61 +30,58 @@ _USAGE_KEYS = {
 }
 
 PERPLEXITY_SEARCH_SCHEMA = {
-    "type": "function",
-    "function": {
-        "name": "perplexity_search",
-        "description": (
-            "Search the live web with Perplexity Sonar and return a synthesized "
-            "answer with citations. Use this when you need a second current-search "
-            "lane or source-backed research beyond the default web_search tool."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Research/search question to ask Perplexity.",
-                },
-                "model": {
-                    "type": "string",
-                    "description": (
-                        "Perplexity model id. Defaults to sonar. Common options include "
-                        "sonar, sonar-pro, sonar-reasoning, and sonar-deep-research when "
-                        "available on the account."
-                    ),
-                },
-                "max_tokens": {
-                    "type": "integer",
-                    "minimum": 16,
-                    "maximum": 8000,
-                    "description": "Maximum completion tokens. Perplexity requires at least 16. Default: 1024.",
-                },
-                "temperature": {
-                    "type": "number",
-                    "minimum": 0,
-                    "maximum": 2,
-                    "description": "Sampling temperature. Default: 0.2 for research stability.",
-                },
-                "search_domain_filter": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": (
-                        "Optional Perplexity domain filter. Use bare domains to include "
-                        "or prefix with '-' to exclude, e.g. ['fcc.gov'] or ['-reddit.com']."
-                    ),
-                },
-                "search_recency_filter": {
-                    "type": "string",
-                    "enum": sorted(_ALLOWED_RECENCY),
-                    "description": "Optional recency filter: day, week, month, or year.",
-                },
-                "return_related_questions": {
-                    "type": "boolean",
-                    "description": "Whether to ask Perplexity for related questions. Default: false.",
-                },
+    "name": "perplexity_search",
+    "description": (
+        "Search the live web with Perplexity Sonar and return a synthesized "
+        "answer with citations. Use this when you need a second current-search "
+        "lane or source-backed research beyond the default web_search tool."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Research/search question to ask Perplexity.",
             },
-            "required": ["query"],
+            "model": {
+                "type": "string",
+                "description": (
+                    "Perplexity model id. Defaults to sonar. Common options include "
+                    "sonar, sonar-pro, sonar-reasoning, and sonar-deep-research when "
+                    "available on the account."
+                ),
+            },
+            "max_tokens": {
+                "type": "integer",
+                "minimum": 16,
+                "maximum": 8000,
+                "description": "Maximum completion tokens. Perplexity requires at least 16. Default: 1024.",
+            },
+            "temperature": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 2,
+                "description": "Sampling temperature. Default: 0.2 for research stability.",
+            },
+            "search_domain_filter": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Optional Perplexity domain filter. Use bare domains to include "
+                    "or prefix with '-' to exclude, e.g. ['fcc.gov'] or ['-reddit.com']."
+                ),
+            },
+            "search_recency_filter": {
+                "type": "string",
+                "enum": sorted(_ALLOWED_RECENCY),
+                "description": "Optional recency filter: day, week, month, or year.",
+            },
+            "return_related_questions": {
+                "type": "boolean",
+                "description": "Whether to ask Perplexity for related questions. Default: false.",
+            },
         },
+        "required": ["query"],
     },
 }
 

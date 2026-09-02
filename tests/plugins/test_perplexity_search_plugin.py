@@ -7,6 +7,7 @@ from email.message import Message
 
 from plugins.perplexity_search import register
 from plugins.perplexity_search import tools
+from tools.registry import ToolRegistry
 
 
 class _DummyContext:
@@ -28,6 +29,28 @@ def test_perplexity_plugin_registers_tool():
     assert call["toolset"] == "perplexity_search"
     assert call["requires_env"] == ["PERPLEXITY_API_KEY"]
     assert call["check_fn"] is tools._check_perplexity_available
+
+
+def test_perplexity_schema_projects_through_real_tool_registry():
+    """The registered schema is flat (no type/function envelope) so the real
+    ToolRegistry wraps it exactly once into OpenAI function-calling format."""
+    registry = ToolRegistry()
+    registry.register(
+        name="perplexity_search",
+        toolset="perplexity_search",
+        schema=tools.PERPLEXITY_SEARCH_SCHEMA,
+        handler=tools._handle_perplexity_search,
+        check_fn=lambda: True,
+    )
+
+    definitions = registry.get_definitions({"perplexity_search"})
+
+    assert len(definitions) == 1
+    assert definitions[0]["type"] == "function"
+    function = definitions[0]["function"]
+    assert function["name"] == "perplexity_search"
+    assert function["parameters"]["required"] == ["query"]
+    assert "function" not in function
 
 
 def test_check_perplexity_available_uses_profile_scoped_config(monkeypatch):

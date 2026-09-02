@@ -107,3 +107,14 @@ class TestVisibleProvidersInjectsTTSPlugins:
         names = [row.get("name") for row in visible]
         assert "Cartesia" not in names
 
+    def test_qwen3_is_selectable_in_cli_and_dashboard(self):
+        providers = tools_config.TOOL_CATEGORIES["tts"]["providers"]
+        qwen_rows = [row for row in providers if row.get("tts_provider") == "qwen3"]
+
+        assert len(qwen_rows) == 1
+        assert qwen_rows[0]["env_vars"] == []
+
+        from hermes_cli import web_server
+
+        assert "qwen3" in web_server._SCHEMA_OVERRIDES["tts.provider"]["options"]
+
