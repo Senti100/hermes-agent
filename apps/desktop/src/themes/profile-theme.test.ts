@@ -102,7 +102,8 @@ describe('wallpaper surface compatibility', () => {
   })
 
   it.each(SUPPRESSED_WALLPAPER_WINDOW_TYPES.map(winType => `?win=${winType}`))(
-    'keeps the %s auxiliary window transparent', search => {
+    'keeps the %s auxiliary window transparent',
+    search => {
       const root = document.documentElement
       const wallpaper = BUILTIN_THEMES['senti-100-packet-noir'].wallpaper
 
