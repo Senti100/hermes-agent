@@ -20,6 +20,83 @@ CHANNEL = "00000000-0000-4000-8000-000000000001"
 SECOND = "00000000-0000-4000-8000-000000000002"
 
 
+def lock_connect_adapter(monkeypatch):
+    adapter = make_adapter()
+    adapter.cli_path = "/synthetic/buzz"
+    monkeypatch.setattr(buzz, "_resolve_private_key", lambda *_: "1" * 64)
+    monkeypatch.setattr(buzz, "_resolve_auth_tag", lambda *_: None)
+    # Stop after the lock boundary, before subscriptions or peer-state effects.
+    adapter._run_cli = AsyncMock(side_effect=[
+        (0, json.dumps([{"pubkey": SELF, "display_name": "Receiver"}]), ""),
+        (1, "", "synthetic channel gate"),
+    ])
+    return adapter
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("result", [(False, {"pid": 12345}), (False, None), False,
+                                   None, True, (1, None), (True,), [True, None]])
+async def test_connect_refused_or_invalid_lock_result_is_closed(monkeypatch, result):
+    import gateway.status as status
+    monkeypatch.setattr(status, "acquire_scoped_lock", lambda *_: result)
+    adapter = lock_connect_adapter(monkeypatch)
+    assert await adapter.connect() is False
+    assert adapter._lock_key is None
+    assert adapter._run_cli.await_count == 1
+    assert not adapter._peer_budget_path().exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", [ImportError("synthetic"), OSError("synthetic")])
+async def test_connect_lock_failure_never_starts_intake(monkeypatch, failure):
+    import gateway.status as status
+    def fail(*_):
+        raise failure
+    monkeypatch.setattr(status, "acquire_scoped_lock", fail)
+    adapter = lock_connect_adapter(monkeypatch)
+    assert await adapter.connect() is False
+    assert adapter._lock_key is None
+    assert adapter._run_cli.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("holder", [None, {"pid": 12345}])
+async def test_connect_acquired_tuple_advances_and_disconnect_releases(monkeypatch, holder):
+    import gateway.status as status
+    monkeypatch.setattr(status, "acquire_scoped_lock", lambda *_: (True, holder))
+    released = Mock()
+    monkeypatch.setattr(status, "release_scoped_lock", released)
+    adapter = lock_connect_adapter(monkeypatch)
+    assert await adapter.connect() is False  # deliberate channel boundary
+    assert adapter._run_cli.await_count == 2
+    key = f"{adapter.relay_url}:{SELF}"
+    assert adapter._lock_key == key
+    await adapter.disconnect()
+    released.assert_called_once_with("buzz", key)
+    assert adapter._lock_key is None
+
+
+@pytest.mark.asyncio
+async def test_connect_real_scoped_lock_refusal_preserves_holder(monkeypatch, tmp_path):
+    import gateway.status as status
+    path = tmp_path / "identity.lock"
+    holder = {"pid": 12345, "start_time": 101, "argv": ["hermes", "gateway", "run"]}
+    original = json.dumps(holder)
+    path.write_text(original)
+    # Use the real tuple-returning helper with a deterministic live-holder oracle.
+    monkeypatch.setattr(status, "_get_scope_lock_path", lambda *_: path)
+    monkeypatch.setattr(status, "_pid_exists", lambda *_: True)
+    monkeypatch.setattr(status, "_get_process_start_time", lambda *_: 101)
+    monkeypatch.setattr(status, "_looks_like_gateway_process", lambda *_: True)
+    adapter = lock_connect_adapter(monkeypatch)
+    assert await adapter.connect() is False
+    assert adapter._run_cli.await_count == 1
+    assert adapter._lock_key is None
+    await adapter.disconnect()
+    assert path.read_text() == original
+    assert not adapter._peer_budget_path().exists()
+
+
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch):
     # The test runner supplies temporary HOME; conftest supplies HERMES_HOME.

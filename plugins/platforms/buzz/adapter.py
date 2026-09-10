@@ -791,14 +791,19 @@ class BuzzAdapter(BasePlatformAdapter):
         try:
             from gateway.status import acquire_scoped_lock
             lock_key = f"{self.relay_url}:{self._self_pubkey}"
-            if not acquire_scoped_lock("buzz", lock_key):
+            result = acquire_scoped_lock("buzz", lock_key)
+            # The helper returns (acquired, holder), not a scalar bool: (False, holder) is truthy.
+            if not (isinstance(result, tuple) and len(result) == 2 and result[0] is True):
                 return self._connect_failed(
                     "lock_conflict", "Buzz identity in use by another profile",
                     "Buzz: identity %s… on %s already in use by another profile", self._self_pubkey[:8], self.relay_url,
                 )
             self._lock_key = lock_key
-        except ImportError:
-            self._lock_key = None  # status module not available (e.g. tests)
+        except Exception:
+            # Missing/unavailable lock storage cannot become permission to run.
+            return self._connect_failed(
+                "lock_unavailable", "Buzz identity lock unavailable", "Buzz: unable to acquire identity lock"
+            )
         # Map channel ids to names and pick the watch set.
         code, out, err = await self._run_cli(["channels", "list"])
         if code != 0:
