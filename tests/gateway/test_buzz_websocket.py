@@ -135,7 +135,8 @@ class _ScriptedWebSocket(_FakeWebSocket):
 
 
 @pytest.mark.asyncio
-async def test_websocket_loop_reconnects_when_read_goes_silent(monkeypatch, caplog):
+@pytest.mark.parametrize("failure", ["pong_timeout", "ping_timeout", "ping_error"])
+async def test_websocket_loop_reconnects_when_read_goes_silent(monkeypatch, caplog, failure):
     """A relay close the transport never surfaces must not park the loop.
 
     Reproduces the #98097 shape: a socket stuck in CLOSE_WAIT yields no
@@ -145,16 +146,34 @@ async def test_websocket_loop_reconnects_when_read_goes_silent(monkeypatch, capl
     import logging
 
     adapter = _make_adapter()
-    monkeypatch.setattr(_buzz_mod, "_WS_READ_IDLE_TIMEOUT", 0.05)
+    monkeypatch.setattr(_buzz_mod, "_WS_READ_IDLE_TIMEOUT", 0.02)
+    monkeypatch.setattr(_buzz_mod, "_WS_HEARTBEAT_TIMEOUT", 0.02)
     caplog.set_level(logging.WARNING)
 
-    sockets = []
+    sockets, receives, pongs = [], [], []
+    ping_started = asyncio.Event()
+    ping_finished = asyncio.Event()
 
     async def dead_anext():
+        receives.append(asyncio.current_task())
         await asyncio.Event().wait()  # never yields, never raises
+
+    async def dead_ping():
+        ping_started.set()
+        try:
+            if failure == "ping_error":
+                raise ConnectionError("synthetic ping failure")
+            if failure == "ping_timeout":
+                await asyncio.Event().wait()
+            pong = asyncio.get_running_loop().create_future()
+            pongs.append(pong)
+            return pong
+        finally:
+            ping_finished.set()
 
     def fake_connect(*args, **kwargs):
         ws = _ScriptedWebSocket(dead_anext)
+        ws.ping = dead_ping
         sockets.append(ws)
         return ws
 
@@ -174,9 +193,14 @@ async def test_websocket_loop_reconnects_when_read_goes_silent(monkeypatch, capl
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
 
-    assert len(sockets) >= 2, "idle read watchdog did not force a reconnect"
+    assert len(sockets) >= 2, "failed heartbeat did not force a reconnect"
     assert sockets[0].exited, "the silent connection was not closed before reconnecting"
-    assert any("went silent" in record.message for record in caplog.records)
+    assert ping_started.is_set() and ping_finished.is_set()
+    assert receives and all(task.done() for task in receives)
+    assert all(pong.done() for pong in pongs)
+    expected = "ping failure" if failure == "ping_error" else "heartbeat timed out"
+    assert any(expected in record.message for record in caplog.records)
+    assert not adapter._ws_active
 
 
 @pytest.mark.asyncio
@@ -680,3 +704,114 @@ async def test_ws_discovery_task_cancelled_when_connection_exits(monkeypatch):
 
     assert started, "discovery task was never started with the connection"
     assert all(t.done() for t in started), "discovery task outlived its connection"
+
+
+@pytest.mark.asyncio
+async def test_healthy_quiet_socket_survives_multiple_idle_intervals_with_same_receive(monkeypatch):
+    from unittest.mock import AsyncMock
+    import websockets
+
+    adapter = _make_adapter()
+    adapter._authenticate_websocket = AsyncMock()
+    adapter._channel_state[CHANNEL] = adapter._new_channel_state("group")
+    adapter._handle_event = AsyncMock()
+    monkeypatch.setattr(_buzz_mod, "_WS_READ_IDLE_TIMEOUT", 0.01)
+    monkeypatch.setattr(_buzz_mod, "_WS_HEARTBEAT_TIMEOUT", 0.1)
+    receives, pongs, connections = [], [], []
+    ready_to_deliver = asyncio.Event()
+    delivered = asyncio.Event()
+
+    async def quiet_receive():
+        receives.append(asyncio.current_task())
+        if len(receives) == 1:
+            await ready_to_deliver.wait()
+            return json.dumps(["EVENT", "hermes-buzz-0", {"id": "after-idle"}])
+        delivered.set()
+        await asyncio.Event().wait()
+
+    async def healthy_ping():
+        assert len(receives) == 1, "idle checks replaced/cancelled the pending receive"
+        assert not receives[0].done()
+        pong = asyncio.get_running_loop().create_future()
+        pongs.append(pong)
+        pong.set_result(0.001)
+        if len(pongs) == 3:
+            ready_to_deliver.set()
+        return pong
+
+    socket = _ScriptedWebSocket(quiet_receive)
+    socket.ping = healthy_ping
+
+    def connect(*args, **kwargs):
+        connections.append(socket)
+        return socket
+
+    monkeypatch.setattr(websockets, "connect", connect)
+    task = asyncio.create_task(adapter._websocket_loop())
+    try:
+        await asyncio.wait_for(delivered.wait(), 2)
+        assert len(pongs) == 3
+        assert len(connections) == 1
+        adapter._handle_event.assert_awaited_once()
+        assert adapter._ws_active
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 2)
+    assert socket.exited
+    assert len(receives) == 2 and all(t.done() for t in receives)
+    assert all(p.done() for p in pongs)
+    assert not adapter._ws_active
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["receive", "ping", "pong"])
+async def test_disconnect_reaps_pending_receive_heartbeat_and_discovery(monkeypatch, phase):
+    from unittest.mock import AsyncMock
+    import websockets
+
+    adapter = _make_adapter()
+    adapter._authenticate_websocket = AsyncMock()
+    monkeypatch.setattr(_buzz_mod, "_WS_READ_IDLE_TIMEOUT", 10 if phase == "receive" else 0.01)
+    monkeypatch.setattr(_buzz_mod, "_WS_HEARTBEAT_TIMEOUT", 10)
+    phase_reached = asyncio.Event()
+    receives, discoveries, pongs = [], [], []
+    ping_finished = asyncio.Event()
+
+    async def receive():
+        receives.append(asyncio.current_task())
+        if phase == "receive":
+            phase_reached.set()
+        await asyncio.Event().wait()
+
+    async def discovery(*_):
+        discoveries.append(asyncio.current_task())
+        await asyncio.Event().wait()
+
+    async def ping():
+        try:
+            if phase == "ping":
+                phase_reached.set()
+                await asyncio.Event().wait()
+            pong = asyncio.get_running_loop().create_future()
+            pongs.append(pong)
+            phase_reached.set()
+            return pong
+        finally:
+            ping_finished.set()
+
+    socket = _ScriptedWebSocket(receive)
+    socket.ping = ping
+    monkeypatch.setattr(websockets, "connect", lambda *_a, **_kw: socket)
+    adapter._ws_discovery_loop = discovery
+    adapter._ws_task = asyncio.create_task(adapter._websocket_loop())
+    try:
+        await asyncio.wait_for(phase_reached.wait(), 2)
+    finally:
+        await asyncio.wait_for(adapter.disconnect(), 2)
+    assert receives and all(t.done() for t in receives)
+    assert discoveries and all(t.done() for t in discoveries)
+    assert all(p.done() for p in pongs)
+    if phase != "receive":
+        assert ping_finished.is_set()
+    assert socket.exited and adapter._ws_task is None and not adapter._ws_active
