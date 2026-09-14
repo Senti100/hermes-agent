@@ -264,21 +264,39 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
         _close_response(response)
         raise
 
-    wav_path = output_path if output_path.endswith(".wav") else output_path.rsplit(".", 1)[0] + ".wav"
-    raw_audio = _read_tts_response_bytes(
-        response, label="Qwen3 TTS", limit=TTS_RESPONSE_BODY_LIMIT_BYTES)
-    Path(wav_path).write_bytes(raw_audio)
+    source_format = str(qwen3_config.get("output_format", "wav") or "wav").strip().lower()
+    if source_format not in {"wav", "mp3", "ogg", "flac", "m4a", "aac", "opus"}:
+        source_format = "wav"
+    source_suffix = f".{source_format}"
+    output = Path(output_path)
+    source_path = output_path
+    is_temp_source = output.suffix.lower() != source_suffix
+    if is_temp_source:
+        fd, source_path = tempfile.mkstemp(
+            prefix=f".{output.stem}.qwen3-", suffix=source_suffix, dir=str(output.parent)
+        )
+        os.close(fd)
 
-    if wav_path != output_path:
+    raw_audio = _read_tts_response_bytes(
+        response, label="Qwen3 TTS", limit=TTS_RESPONSE_BODY_LIMIT_BYTES
+    )
+    Path(source_path).write_bytes(raw_audio)
+
+    if is_temp_source:
         ffmpeg = shutil.which("ffmpeg")
         if ffmpeg:
-            subprocess.run(
-                [ffmpeg, "-i", wav_path, "-y", "-loglevel", "error", output_path],
-                check=True, timeout=30, stdin=subprocess.DEVNULL)
-            with contextlib.suppress(OSError):
-                os.remove(wav_path)
+            try:
+                subprocess.run(
+                    [ffmpeg, "-i", source_path, "-y", "-loglevel", "error", output_path],
+                    check=True,
+                    timeout=30,
+                    stdin=subprocess.DEVNULL,
+                )
+            finally:
+                with contextlib.suppress(OSError):
+                    os.remove(source_path)
         else:
-            os.rename(wav_path, output_path)
+            os.replace(source_path, output_path)
     return output_path
 
 

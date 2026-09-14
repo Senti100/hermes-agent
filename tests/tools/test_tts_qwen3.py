@@ -10,12 +10,14 @@ import tools.tts_tool as tts_tool
 
 def test_qwen3_requirements_accept_default_loopback_without_network() -> None:
     """Status polling must expose Qwen3 without probing or waking its server."""
-    with patch.object(
-        tts_tool,
-        "_load_tts_config",
-        return_value={"provider": "qwen3", "qwen3": {}},
-    ), patch("requests.get", side_effect=AssertionError("network probe forbidden")), patch(
-        "requests.post", side_effect=AssertionError("network probe forbidden")
+    with (
+        patch.object(
+            tts_tool,
+            "_load_tts_config",
+            return_value={"provider": "qwen3", "qwen3": {}},
+        ),
+        patch("requests.get", side_effect=AssertionError("network probe forbidden")),
+        patch("requests.post", side_effect=AssertionError("network probe forbidden")),
     ):
         assert tts_tool.check_tts_requirements() is True
 
@@ -52,15 +54,13 @@ def test_generate_qwen3_tts_sends_clone_identity_payload(tmp_path: Path) -> None
             return None
 
     def _post(url, *, headers, json, timeout, stream):
-        calls.append(
-            {
-                "url": url,
-                "headers": headers,
-                "json": json,
-                "timeout": timeout,
-                "stream": stream,
-            }
-        )
+        calls.append({
+            "url": url,
+            "headers": headers,
+            "json": json,
+            "timeout": timeout,
+            "stream": stream,
+        })
         return _Response()
 
     config = {
@@ -116,8 +116,9 @@ def test_generate_qwen3_tts_rejects_oversized_response(tmp_path: Path) -> None:
             return None
 
     config = {"qwen3": {"api_key_env": ""}}
-    with patch("requests.post", return_value=_Response()), patch.object(
-        tts_tool, "TTS_RESPONSE_BODY_LIMIT_BYTES", 8
+    with (
+        patch("requests.post", return_value=_Response()),
+        patch.object(tts_tool, "TTS_RESPONSE_BODY_LIMIT_BYTES", 8),
     ):
         try:
             tts_tool._generate_qwen3_tts("hello", str(output_path), config)
@@ -127,3 +128,41 @@ def test_generate_qwen3_tts_rejects_oversized_response(tmp_path: Path) -> None:
             raise AssertionError("oversized Qwen3 response was accepted")
 
     assert not output_path.exists()
+
+
+def test_generate_qwen3_tts_cleans_temp_file_when_ffmpeg_fails(tmp_path: Path) -> None:
+    output_path = tmp_path / "voice.mp3"
+
+    class _Response:
+        content = b"RIFF-qwen3-test"
+
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        def iter_content(self, chunk_size):
+            assert chunk_size == tts_tool.TTS_RESPONSE_BODY_CHUNK_BYTES
+            yield self.content
+
+        def close(self) -> None:
+            return None
+
+    with (
+        patch("requests.post", return_value=_Response()),
+        patch.object(tts_tool.shutil, "which", return_value="/usr/bin/ffmpeg"),
+        patch.object(
+            tts_tool.subprocess, "run", side_effect=RuntimeError("ffmpeg failed")
+        ),
+    ):
+        try:
+            tts_tool._generate_qwen3_tts(
+                "hello", str(output_path), {"qwen3": {"api_key_env": ""}}
+            )
+        except RuntimeError as exc:
+            assert "ffmpeg failed" in str(exc)
+        else:
+            raise AssertionError("ffmpeg failure was swallowed")
+
+    assert not output_path.exists()
+    assert not (tmp_path / "voice.wav").exists()
+    assert list(tmp_path.glob(".voice.qwen3-*.wav")) == []
