@@ -72,7 +72,7 @@ describe('wallpaper surface compatibility', () => {
   })
 
   it('covers the complete current transparent auxiliary route inventory', () => {
-    expect(SUPPRESSED_WALLPAPER_WINDOW_TYPES).toEqual(['overlay', 'quick', 'wake', 'hud'])
+    expect(SUPPRESSED_WALLPAPER_WINDOW_TYPES).toEqual(['overlay', 'quick', 'wake', 'intro', 'hud'])
   })
 
   it('bridges glass surfaces to the current shell variables and clears them together', () => {
