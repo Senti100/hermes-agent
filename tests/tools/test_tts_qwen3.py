@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import tools.tts_tool as tts_tool
+import tools.tts_tool_providers as tts_providers
 
 
 def test_qwen3_requirements_accept_default_loopback_without_network() -> None:
@@ -47,7 +48,7 @@ def test_generate_qwen3_tts_sends_clone_identity_payload(tmp_path: Path) -> None
             return None
 
         def iter_content(self, chunk_size):
-            assert chunk_size == tts_tool.TTS_RESPONSE_BODY_CHUNK_BYTES
+            assert chunk_size == tts_providers.TTS_RESPONSE_BODY_CHUNK_BYTES
             yield self.content
 
         def close(self) -> None:
@@ -108,7 +109,7 @@ def test_generate_qwen3_tts_rejects_oversized_response(tmp_path: Path) -> None:
             return None
 
         def iter_content(self, chunk_size):
-            assert chunk_size == tts_tool.TTS_RESPONSE_BODY_CHUNK_BYTES
+            assert chunk_size == tts_providers.TTS_RESPONSE_BODY_CHUNK_BYTES
             yield b"x" * 5
             yield b"y" * 5
 
@@ -118,7 +119,7 @@ def test_generate_qwen3_tts_rejects_oversized_response(tmp_path: Path) -> None:
     config = {"qwen3": {"api_key_env": ""}}
     with (
         patch("requests.post", return_value=_Response()),
-        patch.object(tts_tool, "TTS_RESPONSE_BODY_LIMIT_BYTES", 8),
+        patch.object(tts_providers, "TTS_RESPONSE_BODY_LIMIT_BYTES", 8),
     ):
         try:
             tts_tool._generate_qwen3_tts("hello", str(output_path), config)
@@ -141,7 +142,7 @@ def test_generate_qwen3_tts_cleans_temp_file_when_ffmpeg_fails(tmp_path: Path) -
             return None
 
         def iter_content(self, chunk_size):
-            assert chunk_size == tts_tool.TTS_RESPONSE_BODY_CHUNK_BYTES
+            assert chunk_size == tts_providers.TTS_RESPONSE_BODY_CHUNK_BYTES
             yield self.content
 
         def close(self) -> None:
@@ -149,10 +150,8 @@ def test_generate_qwen3_tts_cleans_temp_file_when_ffmpeg_fails(tmp_path: Path) -
 
     with (
         patch("requests.post", return_value=_Response()),
-        patch.object(tts_tool.shutil, "which", return_value="/usr/bin/ffmpeg"),
-        patch.object(
-            tts_tool.subprocess, "run", side_effect=RuntimeError("ffmpeg failed")
-        ),
+        patch("shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch("subprocess.run", side_effect=RuntimeError("ffmpeg failed")),
     ):
         try:
             tts_tool._generate_qwen3_tts(
@@ -185,7 +184,7 @@ def test_generate_qwen3_tts_cleans_temp_when_bounded_read_fails(tmp_path: Path) 
 
     with (
         patch("requests.post", return_value=_Response()),
-        patch.object(tts_tool, "TTS_RESPONSE_BODY_LIMIT_BYTES", 8),
+        patch.object(tts_providers, "TTS_RESPONSE_BODY_LIMIT_BYTES", 8),
     ):
         try:
             tts_tool._generate_qwen3_tts(
@@ -218,7 +217,7 @@ def test_generate_qwen3_tts_rejects_format_mismatch_without_ffmpeg(
 
     with (
         patch("requests.post", return_value=_Response()),
-        patch.object(tts_tool.shutil, "which", return_value=None),
+        patch("shutil.which", return_value=None),
     ):
         try:
             tts_tool._generate_qwen3_tts(
@@ -249,7 +248,7 @@ def test_generate_qwen3_tts_cleans_temp_when_source_write_fails(tmp_path: Path) 
 
     with (
         patch("requests.post", return_value=_Response()),
-        patch.object(tts_tool.Path, "write_bytes", side_effect=OSError("disk full")),
+        patch.object(Path, "write_bytes", side_effect=OSError("disk full")),
     ):
         try:
             tts_tool._generate_qwen3_tts(
