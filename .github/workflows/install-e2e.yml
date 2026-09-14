@@ -83,6 +83,10 @@ jobs:
   # annotated with what each tag's own tree supports, and shared by every
   # OS's matrix so all combos cover the same set.
   pick-releases:
+    # The twice-daily release-maintainer sweep belongs to the upstream repo.
+    # Forks keep workflow_dispatch available without generating scheduled
+    # failure notifications for release tags they do not mirror.
+    if: github.event_name != 'schedule' || github.repository == 'NousResearch/hermes-agent'
     name: Pick release tags
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -99,6 +103,9 @@ jobs:
           fetch-tags: true
           sparse-checkout: scripts/sandbox/pick-release-tags.sh
           sparse-checkout-cone-mode: false
+      - name: Fetch upstream release tags in forks
+        if: github.repository != 'NousResearch/hermes-agent'
+        run: git fetch --force https://github.com/NousResearch/hermes-agent.git 'refs/tags/v*:refs/tags/v*'
       - id: pick
         env:
           # Dispatch inputs never touch shell syntax directly: TAG_COUNT
