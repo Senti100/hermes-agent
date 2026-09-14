@@ -23,6 +23,7 @@ from typing import Callable, Dict, Any, List, Optional
 from urllib.parse import urlparse
 
 from hermes_constants import display_hermes_home
+import tools.tts_tool_providers as _tts_providers
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +55,7 @@ from tools.tts_tool_delivery import (
     _resolve_max_text_length, _build_audio_delivery_files, _convert_to_opus, _remove_quietly,
     _repair_ogg_container, _resolve_audio_delivery_profile, _split_text_for_tts)
 from tools.tts_tool_providers import (
-    TTS_RESPONSE_BODY_CHUNK_BYTES, TTS_RESPONSE_BODY_LIMIT_BYTES, _close_response,
-    _generate_edge_tts, _generate_elevenlabs, _generate_gemini_tts, _generate_minimax_tts,
+    _close_response, _generate_edge_tts, _generate_elevenlabs, _generate_gemini_tts, _generate_minimax_tts,
     _generate_mistral_tts, _generate_xai_tts, _read_tts_response_bytes, _resolve_minimax_tts_runtime)
 from tools.tts_tool_local import _generate_kittentts, _generate_neutts, _generate_piper_tts
 from tools.tts_tool_plugins import (
@@ -272,7 +272,7 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
     is_temp_source = output.suffix.lower() != source_suffix
 
     raw_audio = _read_tts_response_bytes(
-        response, label="Qwen3 TTS", limit=TTS_RESPONSE_BODY_LIMIT_BYTES
+        response, label="Qwen3 TTS", limit=_tts_providers.TTS_RESPONSE_BODY_LIMIT_BYTES
     )
 
     source_path = output_path
