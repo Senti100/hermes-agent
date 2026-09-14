@@ -4229,7 +4229,13 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
         slot_cap = _DISCORD_MAX_APP_COMMANDS - 1
         dropped_over_cap = 0
 
-        def _auto_register(name: str, description: str, args_hint: str) -> None:
+        def _auto_register(
+            name: str,
+            description: str,
+            args_hint: str,
+            *,
+            dispatch_name: str | None = None,
+        ) -> None:
             nonlocal dropped_over_cap
             # Discord command names: lowercase, hyphens OK, max 32 chars.
             discord_name = name.lower()[:32]
@@ -4238,11 +4244,15 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
             if len(already_registered) >= slot_cap:
                 dropped_over_cap += 1
                 return
+            target_name = dispatch_name or name
             args = (("args", str, "", f"Arguments: {args_hint}"[:100], None),) if args_hint else ()
-            template = f"/{name} {{args}}" if args_hint else f"/{name}"
+            template = f"/{target_name} {{args}}" if args_hint else f"/{target_name}"
             auto_cmd = discord.app_commands.Command(
                 name=discord_name, description=(description or f"Run /{name}")[:100],
-                callback=self._slash_proxy(name, args, template, None, strip=bool(args_hint), prefix="auto_slash_"),
+                callback=self._slash_proxy(
+                    target_name, args, template, None,
+                    strip=bool(args_hint), prefix="auto_slash_",
+                ),
             )
             try:
                 tree.add_command(auto_cmd)
@@ -4250,6 +4260,8 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
             except Exception:
                 # e.g. name conflict with a subcommand group.
                 pass
+        available_commands = []
+        priority_aliases = {"fork", "q", "set-home"}
         try:
             from hermes_cli.commands import COMMAND_REGISTRY, _is_gateway_available, _resolve_config_gates
             try:
@@ -4259,7 +4271,19 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
             config_overrides = _resolve_config_gates()
             for cmd_def in COMMAND_REGISTRY:
                 if _is_gateway_available(cmd_def, config_overrides):
+                    available_commands.append(cmd_def)
                     _auto_register(cmd_def.name, cmd_def.description, cmd_def.args_hint)
+            # Preserve Senti's highest-value operational aliases before plugins consume
+            # the fixed Discord application-command budget.
+            for cmd_def in available_commands:
+                for alias in cmd_def.aliases:
+                    if alias in priority_aliases:
+                        _auto_register(
+                            alias,
+                            f"Alias for /{cmd_def.name}",
+                            cmd_def.args_hint,
+                            dispatch_name=cmd_def.name,
+                        )
             logger.debug("Discord auto-registered %d commands from COMMAND_REGISTRY", len(already_registered))
         except Exception as e:
             logger.warning("Discord auto-register from COMMAND_REGISTRY failed: %s", e)
@@ -4270,6 +4294,19 @@ class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):
                 _auto_register(plugin_name, plugin_desc, plugin_args_hint)
         except Exception as e:
             logger.warning("Discord auto-register from plugin commands failed: %s", e)
+        # Fill any remaining command budget with lower-priority gateway aliases.
+        try:
+            for cmd_def in available_commands:
+                for alias in cmd_def.aliases:
+                    if alias not in priority_aliases:
+                        _auto_register(
+                            alias,
+                            f"Alias for /{cmd_def.name}",
+                            cmd_def.args_hint,
+                            dispatch_name=cmd_def.name,
+                        )
+        except Exception as e:
+            logger.warning("Discord auto-register from command aliases failed: %s", e)
         self._register_skill_group(tree)
         if dropped_over_cap:
             # One over-limit command makes Discord reject the entire sync (error 30032).

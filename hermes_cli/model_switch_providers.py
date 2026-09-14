@@ -810,6 +810,21 @@ def _overlay_has_creds(b: _PickerBuild, pid: str, hermes_slug: str, overlay) -> 
     return has_creds
 
 
+def _include_explicit_current_codex_model(
+    model_ids: list[str], *, current_provider: str, current_model: str
+) -> list[str]:
+    """Keep a working, explicitly configured Astra selection visible when account discovery lags.
+
+    This does not advertise Astra to unconfigured profiles: upstream account discovery remains
+    authoritative unless this profile is already running an Astra model through OpenAI Codex.
+    """
+    from agent.reasoning_effort import is_astra_model
+
+    if current_provider == "openai-codex" and is_astra_model(current_model) and current_model not in model_ids:
+        return [current_model, *model_ids]
+    return model_ids
+
+
 def _lap_overlay_rows(b: _PickerBuild, data: dict) -> None:
     """Section 2: Hermes-only providers (nous, openai-codex, copilot, opencode-go, ...)."""
     from agent.models_dev import PROVIDER_TO_MODELS_DEV
@@ -829,6 +844,12 @@ def _lap_overlay_rows(b: _PickerBuild, data: dict) -> None:
             # appear; falls back to curated when unreachable.
             from hermes_cli.models import cached_provider_model_ids
             model_ids = cached_provider_model_ids(hermes_slug)
+            if hermes_slug == "openai-codex":
+                model_ids = _include_explicit_current_codex_model(
+                    model_ids,
+                    current_provider=b.current_provider,
+                    current_model=b.current_model,
+                )
         elif overlay.auth_type == "aws_sdk":
             model_ids = _aws_live_or_curated_ids(hermes_slug, b.curated, hermes_slug, pid)
         elif hermes_slug == "nous":

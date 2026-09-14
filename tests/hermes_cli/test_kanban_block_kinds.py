@@ -101,6 +101,27 @@ def test_dependency_then_parent_done_promotes(kanban_home: Path) -> None:
         assert kb.get_task(conn, child).status == "ready"
 
 
+@pytest.mark.parametrize("with_terminal_parent", [False, True])
+def test_dependency_without_unfinished_parent_fails_closed(
+    kanban_home: Path, with_terminal_parent: bool,
+) -> None:
+    """A false dependency wait must not spin through todo/ready forever."""
+    with kbc.connect_closing() as conn:
+        child = _running_task(conn, title="child")
+        if with_terminal_parent:
+            parent = kb.create_task(conn, title="done parent", assignee="worker")
+            kb.link_tasks(conn, parent_id=parent, child_id=child)
+            with kb.write_txn(conn):
+                conn.execute("UPDATE tasks SET status='done' WHERE id=?", (parent,))
+
+        assert kb.block_task(conn, child, reason="missing prerequisite", kind="dependency")
+        task = kb.get_task(conn, child)
+        assert task is not None
+        assert task.status == "blocked"
+        assert task.block_kind == "needs_input"
+        assert [event.kind for event in kb.list_events(conn, child)][-1] == "blocked"
+
+
 # ---------------------------------------------------------------------------
 # Completion resets loop memory
 # ---------------------------------------------------------------------------
