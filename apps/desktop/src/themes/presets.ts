@@ -18,6 +18,8 @@
  * re-derived. `nous-alt` is first-party — do not re-derive it from GitHub.
  */
 
+import senti100PacketNoirBg from '../assets/senti-100-packet-noir-bg.webp'
+
 import type { DesktopTheme, DesktopThemeTypography } from './types'
 
 // Color-emoji fonts to append to every stack as a last resort. None of the UI
@@ -663,6 +665,134 @@ export const nousAltTheme: DesktopTheme = {
   }
 }
 
+/** Senti_100 Packet Noir — cyber-NOC wallpaper with soft glass surfaces. */
+export const senti100PacketNoirTheme: DesktopTheme = {
+  name: 'senti-100-packet-noir',
+  label: 'Senti_100 Packet Noir',
+  description: 'Noir NOC wallpaper, electric-blue accents, and soft blurred glass',
+  // Packet Noir is intentionally mode-invariant: its shared wallpaper and
+  // glass surfaces are dark in both app modes, so the fallback light mode must
+  // keep the same high-contrast palette rather than render dark text on glass.
+  colors: {
+    background: '#020814',
+    foreground: '#dceeff',
+    card: '#061326',
+    cardForeground: '#e7f3ff',
+    muted: '#0a1a2f',
+    mutedForeground: '#86a9c4',
+    popover: '#07172c',
+    popoverForeground: '#e7f3ff',
+    primary: '#91d2ff',
+    primaryForeground: '#04101f',
+    secondary: '#0d2440',
+    secondaryForeground: '#b9dcf7',
+    accent: '#0f3157',
+    accentForeground: '#dceeff',
+    border: '#1a4469',
+    input: '#255b86',
+    ring: '#4aaeff',
+    midground: '#4aaeff',
+    composerRing: '#9bd8ff',
+    destructive: '#e85f82',
+    destructiveForeground: '#fff6f8',
+    sidebarBackground: '#020713',
+    sidebarBorder: '#133554',
+    userBubble: '#0a2341',
+    userBubbleBorder: '#2d70a7'
+  },
+  darkColors: {
+    background: '#020814',
+    foreground: '#dceeff',
+    card: '#061326',
+    cardForeground: '#e7f3ff',
+    muted: '#0a1a2f',
+    mutedForeground: '#86a9c4',
+    popover: '#07172c',
+    popoverForeground: '#e7f3ff',
+    primary: '#91d2ff',
+    primaryForeground: '#04101f',
+    secondary: '#0d2440',
+    secondaryForeground: '#b9dcf7',
+    accent: '#0f3157',
+    accentForeground: '#dceeff',
+    border: '#1a4469',
+    input: '#255b86',
+    ring: '#4aaeff',
+    midground: '#4aaeff',
+    composerRing: '#9bd8ff',
+    destructive: '#e85f82',
+    destructiveForeground: '#fff6f8',
+    sidebarBackground: '#020713',
+    sidebarBorder: '#133554',
+    userBubble: '#0a2341',
+    userBubbleBorder: '#2d70a7'
+  },
+  typography: {
+    fontSans: SYSTEM_SANS,
+    fontMono: `"JetBrains Mono", "SF Mono", ${SYSTEM_MONO}`
+  },
+  wallpaper: {
+    image: senti100PacketNoirBg,
+    position: 'center center',
+    size: 'cover',
+    opacity: 1,
+    filter: 'blur(3px) saturate(1.12) brightness(0.96)',
+    scale: 1.025,
+    frontFilter: 'blur(3px) saturate(1.04)',
+    overlay:
+      'linear-gradient(90deg, rgba(1, 6, 16, 0.72) 0%, rgba(2, 10, 24, 0.48) 46%, rgba(3, 10, 22, 0.22) 100%), radial-gradient(circle at 72% 42%, rgba(74, 174, 255, 0.14), transparent 34%)',
+    backgroundSurface: 'rgba(2, 8, 20, 0.15)',
+    chatSurface: 'rgba(2, 8, 20, 0.20)',
+    editorSurface: 'rgba(2, 8, 20, 0.12)',
+    sidebarSurface: 'rgba(1, 6, 16, 0.30)',
+    cardSurface: 'rgba(6, 18, 36, 0.44)',
+    popoverSurface: 'rgba(5, 16, 32, 0.62)',
+    bubbleSurface: 'rgba(7, 28, 52, 0.58)'
+  },
+  terminal: {
+    foreground: '#dceeff',
+    cursor: '#9bd8ff',
+    selectionBackground: 'rgba(74, 174, 255, 0.26)',
+    black: '#020814',
+    red: '#e85f82',
+    green: '#66d6a6',
+    yellow: '#ffd36f',
+    blue: '#4aaeff',
+    magenta: '#b79cff',
+    cyan: '#60d7ff',
+    white: '#dceeff',
+    brightBlack: '#42647e',
+    brightRed: '#ff7b9b',
+    brightGreen: '#82efbd',
+    brightYellow: '#ffe18c',
+    brightBlue: '#7cc7ff',
+    brightMagenta: '#cbb7ff',
+    brightCyan: '#92e5ff',
+    brightWhite: '#f5fbff'
+  },
+  darkTerminal: {
+    foreground: '#dceeff',
+    cursor: '#9bd8ff',
+    selectionBackground: 'rgba(74, 174, 255, 0.26)',
+    black: '#020814',
+    red: '#e85f82',
+    green: '#66d6a6',
+    yellow: '#ffd36f',
+    blue: '#4aaeff',
+    magenta: '#b79cff',
+    cyan: '#60d7ff',
+    white: '#dceeff',
+    brightBlack: '#42647e',
+    brightRed: '#ff7b9b',
+    brightGreen: '#82efbd',
+    brightYellow: '#ffe18c',
+    brightBlue: '#7cc7ff',
+    brightMagenta: '#cbb7ff',
+    brightCyan: '#92e5ff',
+    brightWhite: '#f5fbff'
+  }
+}
+
 /**
  * Midnight — deep blue-violet, near-monotone. Dark only: it has no light
  * palette because the whole idea is the dark end of the spectrum.
@@ -852,6 +982,7 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
   everforest: everforestTheme,
   solarized: solarizedTheme,
   'nous-alt': nousAltTheme,
+  'senti-100-packet-noir': senti100PacketNoirTheme,
   midnight: midnightTheme,
   ember: emberTheme,
   mono: monoTheme,

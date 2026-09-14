@@ -50,3 +50,19 @@ describe('nous-alt is the retired Nous, not the default', () => {
     expect(BUILTIN_THEMES.nous.darkColors?.background).not.toBe(nousAltTheme.darkColors?.background)
   })
 })
+
+describe('Senti_100 Packet Noir wallpaper theme', () => {
+  it('registers a bundled wallpaper with readable glass surfaces', () => {
+    const theme = BUILTIN_THEMES['senti-100-packet-noir']
+
+    expect(theme).toBeDefined()
+    expect(theme.wallpaper?.image).toBeTruthy()
+    expect(theme.wallpaper?.opacity).toBeGreaterThan(0)
+    expect(theme.wallpaper?.chatSurface).toMatch(/^rgba\(/)
+    expect(theme.wallpaper?.sidebarSurface).toMatch(/^rgba\(/)
+    expect(theme.colors.foreground).toBe('#dceeff')
+    expect(theme.darkColors?.foreground).toBe('#dceeff')
+    expect(theme.colors.background).toBe(theme.darkColors?.background)
+    expect(theme.terminal).toEqual(theme.darkTerminal)
+  })
+})

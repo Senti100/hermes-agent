@@ -85,6 +85,29 @@ export interface DesktopTerminalPalette {
   brightWhite?: string
 }
 
+export interface DesktopThemeWallpaper {
+  /** Bundled asset URL (Vite import) or a CSS-ready URL string. */
+  image: string
+  position?: string
+  size?: string
+  opacity?: string | number
+  overlay?: string
+  /** Filter applied directly to the image layer. */
+  filter?: string
+  /** Small scale bump prevents blur from exposing transparent edges. */
+  scale?: string | number
+  /** Backdrop-filter layer between the wallpaper and app chrome. */
+  frontFilter?: string
+  /** Optional translucent surface overrides for wallpaper-safe glass. */
+  backgroundSurface?: string
+  chatSurface?: string
+  editorSurface?: string
+  sidebarSurface?: string
+  cardSurface?: string
+  popoverSurface?: string
+  bubbleSurface?: string
+}
+
 export interface DesktopTheme {
   name: string
   label: string
@@ -94,6 +117,8 @@ export interface DesktopTheme {
   /** Hand-tuned dark palette. Skins like `nous` ship one. */
   darkColors?: DesktopThemeColors
   typography?: Partial<DesktopThemeTypography>
+  /** Optional full-window wallpaper/glass treatment. */
+  wallpaper?: DesktopThemeWallpaper
   /** Light-variant terminal ANSI palette (also the fallback for dark). */
   terminal?: DesktopTerminalPalette
   /** Dark-variant terminal ANSI palette. Falls back to `terminal`. */

@@ -907,10 +907,29 @@ def build_welcome_banner(
     accent = _skin_color("banner_accent", "#FFBF00")
     dim = _skin_color("banner_dim", "#B8860B")
     text = _skin_color("banner_text", "#FFF8DC")
-    # Use skin's custom caduceus art if provided
+    # Use skin's custom caduceus art if provided. Prefer the raw ANSI hero
+    # path when present so Rich consumes the same colored asset as the Ink TUI.
     _bskin = _quiet(_active_skin)
-    left_lines = ["", getattr(_bskin, "banner_hero", None) or HERMES_CADUCEUS, ""]
-    left_lines += _banner_left_lines(model, cwd, session_id, context_length, provider, accent=accent, dim=dim)
+    hero = getattr(_bskin, "banner_hero", None) or HERMES_CADUCEUS
+    hero_ansi = getattr(_bskin, "banner_hero_ansi", "") or ""
+    left_tail_lines = _banner_left_lines(
+        model, cwd, session_id, context_length, provider, accent=accent, dim=dim)
+    if hero_ansi:
+        try:
+            from rich.ansi import AnsiDecoder
+            from rich.console import Group
+            from rich.text import Text
+
+            left_content = Group(
+                Text(""),
+                *list(AnsiDecoder().decode(hero_ansi)),
+                Text(""),
+                *(Text.from_markup(line) for line in left_tail_lines),
+            )
+        except Exception:
+            left_content = "\n".join(["", hero, "", *left_tail_lines])
+    else:
+        left_content = "\n".join(["", hero, "", *left_tail_lines])
     right_lines = _banner_tool_lines(
         tools, availability.get("unavailable_toolsets", []), get_toolset_for_tool,
         lazy_tools=set(availability.get("lazy_tools", [])), disabled_tools=set(availability.get("disabled_tools", [])),
@@ -960,7 +979,7 @@ def build_welcome_banner(
     layout_table = Table.grid(padding=(0, 2))
     layout_table.add_column("left", justify="center")
     layout_table.add_column("right", justify="left")
-    layout_table.add_row("\n".join(left_lines), "\n".join(right_lines))
+    layout_table.add_row(left_content, "\n".join(right_lines))
     version_label = format_banner_version_label()
     release_info = get_latest_release_tag()
     if release_info:

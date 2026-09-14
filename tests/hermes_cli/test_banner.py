@@ -1,5 +1,6 @@
 """Tests for banner toolset name normalization and skin color usage."""
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from rich.console import Console
@@ -109,3 +110,38 @@ def test_empty_model_shows_the_free_tier_route_when_it_carries_inference(tmp_pat
 
     assert "welcome" in render(True) and "no model configured" not in render(True)
     assert "no model configured" in render(False)
+
+
+def test_build_welcome_banner_prefers_skin_raw_ansi_hero(monkeypatch):
+    """The Rich banner consumes the same raw ANSI skin hero as the Ink TUI."""
+    from hermes_cli import skin_engine
+
+    skin = SimpleNamespace(
+        banner_hero="FALLBACK_HERO_SHOULD_NOT_RENDER",
+        banner_hero_ansi="\x1b[38;2;100;217;255m⣀⡀\x1b[0m\n",
+        banner_logo="",
+        get_color=lambda key, fallback="": fallback,
+    )
+    monkeypatch.setattr(skin_engine, "get_active_skin", lambda: skin)
+
+    with (
+        patch.object(model_tools, "check_tool_availability", return_value=([], [])),
+        patch.object(banner, "get_available_skills", return_value={}),
+        patch.object(banner, "get_update_result", return_value=None),
+        patch.object(tools.mcp_tool_discovery, "get_mcp_status", return_value=[]),
+    ):
+        console = Console(force_terminal=True, color_system="truecolor", width=120, record=True)
+        banner.build_welcome_banner(
+            console=console,
+            model="test-model",
+            cwd="/tmp",
+            tools=[],
+            enabled_toolsets=[],
+            context_length=128000,
+            provider="openrouter",
+        )
+
+    output = console.export_text(styles=True)
+    assert "⣀⡀" in output
+    assert "\x1b[38;2;100;217;255m" in output
+    assert "FALLBACK_HERO_SHOULD_NOT_RENDER" not in output
