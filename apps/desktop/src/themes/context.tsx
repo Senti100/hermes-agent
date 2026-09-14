@@ -241,9 +241,9 @@ const cssUrl = (value: string): string => {
 }
 
 // Current transparent auxiliary BrowserWindow routes in the Electron source:
-// `overlay`, `quick`, `wake`, and the HUD shell. `secondary` stays a real chat
-// window and keeps the wallpaper/glass surface treatment.
-export const SUPPRESSED_WALLPAPER_WINDOW_TYPES = ['overlay', 'quick', 'wake', 'hud'] as const
+// `overlay`, `quick`, `wake`, `intro`, and the HUD shell. `secondary` stays a
+// real chat window and keeps the wallpaper/glass surface treatment.
+export const SUPPRESSED_WALLPAPER_WINDOW_TYPES = ['overlay', 'quick', 'wake', 'intro', 'hud'] as const
 
 export const isWallpaperSuppressedWindow = (search: string): boolean => {
   const windowType = new URLSearchParams(search).get('win')
