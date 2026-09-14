@@ -174,13 +174,11 @@ def _bounded_results(value: Any) -> list[dict[str, Any]]:
     for item in value[:_MAX_SEARCH_RESULTS]:
         if not isinstance(item, dict):
             continue
-        bounded.append(
-            {
-                str(key)[:100]: str(raw)[:10_000]
-                for key, raw in list(item.items())[:30]
-                if raw is not None
-            }
-        )
+        bounded.append({
+            str(key)[:100]: str(raw)[:10_000]
+            for key, raw in list(item.items())[:30]
+            if raw is not None
+        })
     return bounded
 
 
@@ -192,11 +190,17 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
 
     api_key = (get_env_value("PERPLEXITY_API_KEY") or "").strip()
     if not api_key:
-        return tool_error("PERPLEXITY_API_KEY is not set for this Hermes profile", success=False)
+        return tool_error(
+            "PERPLEXITY_API_KEY is not set for this Hermes profile", success=False
+        )
 
     model = str(args.get("model") or _DEFAULT_MODEL).strip() or _DEFAULT_MODEL
-    max_tokens = _coerce_int(args.get("max_tokens"), default=1024, minimum=16, maximum=8000)
-    temperature = _coerce_float(args.get("temperature"), default=0.2, minimum=0.0, maximum=2.0)
+    max_tokens = _coerce_int(
+        args.get("max_tokens"), default=1024, minimum=16, maximum=8000
+    )
+    temperature = _coerce_float(
+        args.get("temperature"), default=0.2, minimum=0.0, maximum=2.0
+    )
 
     payload: dict[str, Any] = {
         "model": model,
@@ -228,7 +232,9 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
         payload["search_recency_filter"] = recency
 
     if "return_related_questions" in args:
-        payload["return_related_questions"] = _coerce_bool(args.get("return_related_questions"))
+        payload["return_related_questions"] = _coerce_bool(
+            args.get("return_related_questions")
+        )
 
     request = urllib.request.Request(
         _API_URL,
@@ -253,14 +259,18 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
             status_code=exc.code,
         )
     except (urllib.error.URLError, TimeoutError, socket.timeout) as exc:
-        return tool_error(f"Perplexity request failed: {type(exc).__name__}: {exc}", success=False)
+        return tool_error(
+            f"Perplexity request failed: {type(exc).__name__}: {exc}", success=False
+        )
     except json.JSONDecodeError as exc:
         return tool_error(f"Perplexity returned invalid JSON: {exc}", success=False)
     except ValueError as exc:
         return tool_error(str(exc), success=False)
 
     choices = data.get("choices") if isinstance(data, dict) else None
-    message = (choices[0].get("message") if choices and isinstance(choices[0], dict) else {}) or {}
+    message = (
+        choices[0].get("message") if choices and isinstance(choices[0], dict) else {}
+    ) or {}
     answer = str(message.get("content") or "").strip()[:_MAX_ANSWER_CHARS]
 
     return tool_result(
@@ -269,7 +279,9 @@ def _handle_perplexity_search(args: dict, **_kwargs: Any) -> str:
         model=data.get("model") or model,
         query=query,
         answer=answer,
-        citations=_bounded_strings(data.get("citations"), count=_MAX_CITATIONS, chars=2_048),
+        citations=_bounded_strings(
+            data.get("citations"), count=_MAX_CITATIONS, chars=2_048
+        ),
         search_results=_bounded_results(data.get("search_results")),
         related_questions=_bounded_strings(
             data.get("related_questions"), count=_MAX_RELATED_QUESTIONS, chars=1_000

@@ -85,23 +85,6 @@ export interface DesktopTerminalPalette {
   brightWhite?: string
 }
 
-export interface DesktopTheme {
-  name: string
-  label: string
-  description: string
-  /** Light palette (also reused for dark when `darkColors` is omitted). */
-  colors: DesktopThemeColors
-  /** Hand-tuned dark palette. Skins like `nous` ship one. */
-  darkColors?: DesktopThemeColors
-  typography?: Partial<DesktopThemeTypography>
-  /** Optional full-window wallpaper/glass treatment. */
-  wallpaper?: DesktopThemeWallpaper
-  /** Light-variant terminal ANSI palette (also the fallback for dark). */
-  terminal?: DesktopTerminalPalette
-  /** Dark-variant terminal ANSI palette. Falls back to `terminal`. */
-  darkTerminal?: DesktopTerminalPalette
-}
-
 export interface DesktopThemeWallpaper {
   /** Bundled asset URL (Vite import) or a CSS-ready URL string. */
   image: string
@@ -123,4 +106,43 @@ export interface DesktopThemeWallpaper {
   cardSurface?: string
   popoverSurface?: string
   bubbleSurface?: string
+}
+
+export interface DesktopTheme {
+  name: string
+  label: string
+  description: string
+  /** Light palette (also reused for dark when `darkColors` is omitted). */
+  colors: DesktopThemeColors
+  /** Hand-tuned dark palette. Skins like `nous` ship one. */
+  darkColors?: DesktopThemeColors
+  typography?: Partial<DesktopThemeTypography>
+  /** Optional full-window wallpaper/glass treatment. */
+  wallpaper?: DesktopThemeWallpaper
+  /** Light-variant terminal ANSI palette (also the fallback for dark). */
+  terminal?: DesktopTerminalPalette
+  /** Dark-variant terminal ANSI palette. Falls back to `terminal`. */
+  darkTerminal?: DesktopTerminalPalette
+}
+
+// The minimal set of color keys a stored theme must carry to be usable. We keep
+// this loose — `applyTheme` tolerates missing optionals via fallbacks — but a
+// theme with no background/foreground/primary is junk and gets dropped.
+const REQUIRED_COLOR_KEYS: ReadonlyArray<keyof DesktopThemeColors> = ['background', 'foreground', 'primary']
+
+/** Shape check for a theme read back from storage or a contribution. */
+export function isValidTheme(value: unknown): value is DesktopTheme {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const theme = value as Partial<DesktopTheme>
+
+  if (typeof theme.name !== 'string' || typeof theme.label !== 'string' || !theme.colors) {
+    return false
+  }
+
+  const colors = theme.colors as unknown as Record<string, unknown>
+
+  return REQUIRED_COLOR_KEYS.every(key => typeof colors[key] === 'string')
 }
