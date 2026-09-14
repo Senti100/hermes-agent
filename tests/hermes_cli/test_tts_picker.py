@@ -114,7 +114,7 @@ class TestVisibleProvidersInjectsTTSPlugins:
         assert len(qwen_rows) == 1
         assert qwen_rows[0]["env_vars"] == []
 
-        from hermes_cli import web_server
+        from hermes_cli import web_server_config
 
-        assert "qwen3" in web_server._SCHEMA_OVERRIDES["tts.provider"]["options"]
+        assert "qwen3" in web_server_config._SCHEMA_OVERRIDES["tts.provider"]["options"]
 
