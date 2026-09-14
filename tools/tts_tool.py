@@ -269,34 +269,40 @@ def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any])
         source_format = "wav"
     source_suffix = f".{source_format}"
     output = Path(output_path)
-    source_path = output_path
     is_temp_source = output.suffix.lower() != source_suffix
+
+    raw_audio = _read_tts_response_bytes(
+        response, label="Qwen3 TTS", limit=TTS_RESPONSE_BODY_LIMIT_BYTES
+    )
+
+    source_path = output_path
     if is_temp_source:
         fd, source_path = tempfile.mkstemp(
             prefix=f".{output.stem}.qwen3-", suffix=source_suffix, dir=str(output.parent)
         )
         os.close(fd)
 
-    raw_audio = _read_tts_response_bytes(
-        response, label="Qwen3 TTS", limit=TTS_RESPONSE_BODY_LIMIT_BYTES
-    )
-    Path(source_path).write_bytes(raw_audio)
+    try:
+        Path(source_path).write_bytes(raw_audio)
+        if not is_temp_source:
+            return output_path
 
-    if is_temp_source:
         ffmpeg = shutil.which("ffmpeg")
-        if ffmpeg:
-            try:
-                subprocess.run(
-                    [ffmpeg, "-i", source_path, "-y", "-loglevel", "error", output_path],
-                    check=True,
-                    timeout=30,
-                    stdin=subprocess.DEVNULL,
-                )
-            finally:
-                with contextlib.suppress(OSError):
-                    os.remove(source_path)
-        else:
-            os.replace(source_path, output_path)
+        if not ffmpeg:
+            raise RuntimeError(
+                f"Qwen3 TTS returned {source_format} audio for {output.suffix or 'the requested output'}; "
+                "ffmpeg is required to convert it safely"
+            )
+        subprocess.run(
+            [ffmpeg, "-i", source_path, "-y", "-loglevel", "error", output_path],
+            check=True,
+            timeout=30,
+            stdin=subprocess.DEVNULL,
+        )
+    finally:
+        if is_temp_source:
+            with contextlib.suppress(OSError):
+                os.remove(source_path)
     return output_path
 
 

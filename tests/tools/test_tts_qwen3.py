@@ -166,3 +166,99 @@ def test_generate_qwen3_tts_cleans_temp_file_when_ffmpeg_fails(tmp_path: Path) -
     assert not output_path.exists()
     assert not (tmp_path / "voice.wav").exists()
     assert list(tmp_path.glob(".voice.qwen3-*.wav")) == []
+
+
+def test_generate_qwen3_tts_cleans_temp_when_bounded_read_fails(tmp_path: Path) -> None:
+    output_path = tmp_path / "voice.mp3"
+
+    class _Response:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        def iter_content(self, chunk_size):
+            yield b"x" * 5
+            yield b"y" * 5
+
+        def close(self) -> None:
+            return None
+
+    with (
+        patch("requests.post", return_value=_Response()),
+        patch.object(tts_tool, "TTS_RESPONSE_BODY_LIMIT_BYTES", 8),
+    ):
+        try:
+            tts_tool._generate_qwen3_tts(
+                "hello", str(output_path), {"qwen3": {"api_key_env": ""}}
+            )
+        except RuntimeError as exc:
+            assert "exceeds 8 bytes" in str(exc)
+        else:
+            raise AssertionError("oversized Qwen3 response was accepted")
+
+    assert not output_path.exists()
+    assert list(tmp_path.glob(".voice.qwen3-*.wav")) == []
+
+
+def test_generate_qwen3_tts_rejects_format_mismatch_without_ffmpeg(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "voice.mp3"
+
+    class _Response:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        def iter_content(self, chunk_size):
+            yield b"RIFF-qwen3-test"
+
+        def close(self) -> None:
+            return None
+
+    with (
+        patch("requests.post", return_value=_Response()),
+        patch.object(tts_tool.shutil, "which", return_value=None),
+    ):
+        try:
+            tts_tool._generate_qwen3_tts(
+                "hello", str(output_path), {"qwen3": {"api_key_env": ""}}
+            )
+        except RuntimeError as exc:
+            assert "ffmpeg" in str(exc).lower()
+        else:
+            raise AssertionError("format mismatch was silently renamed")
+
+    assert not output_path.exists()
+    assert list(tmp_path.glob(".voice.qwen3-*.wav")) == []
+
+
+def test_generate_qwen3_tts_cleans_temp_when_source_write_fails(tmp_path: Path) -> None:
+    output_path = tmp_path / "voice.mp3"
+
+    class _Response:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        def iter_content(self, chunk_size):
+            yield b"RIFF-qwen3-test"
+
+        def close(self) -> None:
+            return None
+
+    with (
+        patch("requests.post", return_value=_Response()),
+        patch.object(tts_tool.Path, "write_bytes", side_effect=OSError("disk full")),
+    ):
+        try:
+            tts_tool._generate_qwen3_tts(
+                "hello", str(output_path), {"qwen3": {"api_key_env": ""}}
+            )
+        except OSError as exc:
+            assert "disk full" in str(exc)
+        else:
+            raise AssertionError("source write failure was swallowed")
+
+    assert not output_path.exists()
+    assert list(tmp_path.glob(".voice.qwen3-*.wav")) == []

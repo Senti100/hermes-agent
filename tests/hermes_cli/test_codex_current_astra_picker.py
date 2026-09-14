@@ -1,5 +1,8 @@
 """Fork policy for keeping an explicitly configured Astra model visible."""
 
+from types import SimpleNamespace
+
+from hermes_cli import model_switch_providers as provider_rows
 from hermes_cli.model_switch_providers import _include_explicit_current_codex_model
 
 
@@ -41,3 +44,35 @@ def test_discovered_current_astra_is_not_duplicated():
     )
 
     assert models == ["gpt-6-astra", "gpt-5.6-sol"]
+
+
+def test_overlay_row_calls_configured_astra_preservation(monkeypatch):
+    overlay = SimpleNamespace(keyless=False, auth_type="oauth")
+    monkeypatch.setattr(
+        "hermes_cli.providers.HERMES_OVERLAYS", {"openai-codex": overlay}
+    )
+    monkeypatch.setattr("agent.models_dev.PROVIDER_TO_MODELS_DEV", {})
+    monkeypatch.setattr(provider_rows, "_overlay_has_creds", lambda *_args: True)
+    monkeypatch.setattr(
+        "hermes_cli.models.cached_provider_model_ids",
+        lambda slug: ["gpt-5.6-sol"] if slug == "openai-codex" else [],
+    )
+
+    build = provider_rows._PickerBuild(
+        current_provider="openai-codex",
+        current_base_url="",
+        current_model="gpt-6-astra",
+        max_models=20,
+        for_picker=True,
+        force_fresh_nous_tier=False,
+        probe_custom_providers=False,
+        probe_current_custom_provider=False,
+        refresh=True,
+        excluded=set(),
+        curated={},
+    )
+    provider_rows._lap_overlay_rows(build, {})
+
+    assert len(build.results) == 1
+    assert build.results[0]["slug"] == "openai-codex"
+    assert build.results[0]["models"][0] == "gpt-6-astra"
