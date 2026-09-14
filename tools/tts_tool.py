@@ -15,9 +15,12 @@ import importlib.util
 import json
 import logging
 import os
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import Callable, Dict, Any, List, Optional
+from urllib.parse import urlparse
 
 from hermes_constants import display_hermes_home
 
@@ -51,8 +54,9 @@ from tools.tts_tool_delivery import (
     _resolve_max_text_length, _build_audio_delivery_files, _convert_to_opus, _remove_quietly,
     _repair_ogg_container, _resolve_audio_delivery_profile, _split_text_for_tts)
 from tools.tts_tool_providers import (
+    TTS_RESPONSE_BODY_CHUNK_BYTES, TTS_RESPONSE_BODY_LIMIT_BYTES, _close_response,
     _generate_edge_tts, _generate_elevenlabs, _generate_gemini_tts, _generate_minimax_tts,
-    _generate_mistral_tts, _generate_xai_tts, _resolve_minimax_tts_runtime)
+    _generate_mistral_tts, _generate_xai_tts, _read_tts_response_bytes, _resolve_minimax_tts_runtime)
 from tools.tts_tool_local import _generate_kittentts, _generate_neutts, _generate_piper_tts
 from tools.tts_tool_plugins import (
     _dispatch_to_plugin_provider, _plugin_provider_is_available,
@@ -159,7 +163,7 @@ def _get_provider(tts_config: Dict[str, Any]) -> str:
 OPUS_VOICE_PLATFORMS = frozenset({"telegram", "matrix", "feishu", "whatsapp", "signal"})
 # Built-ins that emit Opus natively when asked for .ogg; the rest need ffmpeg for voice bubbles.
 _NATIVE_OPUS_PROVIDERS = frozenset({"openai", "elevenlabs", "mistral", "gemini"})
-_FFMPEG_OPUS_PROVIDERS = frozenset({"edge", "neutts", "minimax", "xai", "kittentts", "piper"})
+_FFMPEG_OPUS_PROVIDERS = frozenset({"edge", "neutts", "minimax", "xai", "kittentts", "piper", "qwen3"})
 
 
 # --- Built-in provider dispatch ---
@@ -188,7 +192,8 @@ _BUILTIN_DISPATCH: Dict[str, tuple] = {
     "piper": (lambda: _importable(_import_piper), "Piper (local)", "_generate_piper_tts",
               "Piper provider selected but 'piper-tts' package not installed. "
               "Run 'hermes tools' and select Piper under TTS, or install manually: "
-              "pip install piper-tts")}
+              "pip install piper-tts"),
+    "qwen3": (None, "Qwen3 TTS", "_generate_qwen3_tts", None)}
 
 
 def _error_json(message: str) -> str:
@@ -204,6 +209,77 @@ def _run_edge_tts(text: str, file_str: str, tts_config: Dict[str, Any]) -> None:
             pool.submit(run).result(timeout=60)
     except RuntimeError:
         run()
+
+
+def _generate_qwen3_tts(text: str, output_path: str, tts_config: Dict[str, Any]) -> str:
+    """Generate speech through a local OpenAI-compatible Qwen3 TTS proxy."""
+    import requests
+
+    qwen3_config = tts_config.get("qwen3", {}) if isinstance(tts_config, dict) else {}
+    base_url = str(qwen3_config.get("base_url", "http://127.0.0.1:19380")).strip().rstrip("/")
+    endpoint = str(qwen3_config.get("endpoint", "/v1/audio/speech")).strip()
+    model = str(qwen3_config.get("model", "")).strip()
+    voice = str(qwen3_config.get("voice", "")).strip()
+    output_format = str(qwen3_config.get("output_format", "wav")).strip()
+    timeout = int(qwen3_config.get("timeout", 300))
+    language = str(qwen3_config.get("language", "English")).strip()
+
+    ref_audio = str(qwen3_config.get("ref_audio", "")).strip()
+    ref_text = str(qwen3_config.get("ref_text", "")).strip()
+    ref_text_file = str(qwen3_config.get("ref_text_file", "")).strip()
+    if not ref_text and ref_text_file:
+        try:
+            ref_text = Path(ref_text_file).expanduser().read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError) as exc:
+            logger.warning("Qwen3 ref_text_file unreadable at %s: %s", ref_text_file, exc)
+
+    payload: Dict[str, Any] = {
+        "input": text,
+        "output_format": output_format,
+        "language": language,
+    }
+    speed = tts_config.get("speed", qwen3_config.get("speed"))
+    if speed is not None:
+        payload["speed"] = max(0.25, min(4.0, float(speed)))
+    if model:
+        payload["model"] = model
+    if voice:
+        payload["voice"] = voice
+    if ref_audio:
+        payload.update({"ref_audio": ref_audio, "refAudio": ref_audio})
+    if ref_text:
+        payload.update({"ref_text": ref_text, "refText": ref_text})
+
+    api_key_env = str(qwen3_config.get("api_key_env", "HERMES_QWEN3_TTS_API_KEY")).strip()
+    api_key = (get_env_value(api_key_env) or "") if api_key_env else ""
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    response = requests.post(
+        f"{base_url}{endpoint}", headers=headers, json=payload, timeout=timeout, stream=True)
+    try:
+        response.raise_for_status()
+    except Exception:
+        _close_response(response)
+        raise
+
+    wav_path = output_path if output_path.endswith(".wav") else output_path.rsplit(".", 1)[0] + ".wav"
+    raw_audio = _read_tts_response_bytes(
+        response, label="Qwen3 TTS", limit=TTS_RESPONSE_BODY_LIMIT_BYTES)
+    Path(wav_path).write_bytes(raw_audio)
+
+    if wav_path != output_path:
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            subprocess.run(
+                [ffmpeg, "-i", wav_path, "-y", "-loglevel", "error", output_path],
+                check=True, timeout=30, stdin=subprocess.DEVNULL)
+            with contextlib.suppress(OSError):
+                os.remove(wav_path)
+        else:
+            os.rename(wav_path, output_path)
+    return output_path
 
 
 def _select_builtin_engine(provider: str) -> tuple:
@@ -493,6 +569,19 @@ def _xai_requirements() -> bool:
         return False
 
 
+def _qwen3_requirements() -> bool:
+    """Validate local transport/config without waking or probing the model server."""
+    try:
+        import requests  # noqa: F401
+    except ImportError:
+        return False
+    tts_config = _load_tts_config()
+    qwen3_config = tts_config.get("qwen3", {}) if isinstance(tts_config, dict) else {}
+    base_url = str(qwen3_config.get("base_url", "http://127.0.0.1:19380")).strip()
+    parsed = urlparse(base_url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
 # Must mirror text_to_speech_tool dispatch: unrelated cloud credentials never make the Edge
 # default usable, and an explicit provider is checked on its own.
 _BUILTIN_REQUIREMENTS: Dict[str, Callable[[], bool]] = {
@@ -506,7 +595,8 @@ _BUILTIN_REQUIREMENTS: Dict[str, Callable[[], bool]] = {
     "mistral": lambda: _importable(_import_mistral_client) and bool(_resolve_provider_key("MISTRAL_API_KEY", "mistral")),
     "neutts": lambda: _check_neutts_available(),
     "kittentts": lambda: _check_kittentts_available(),
-    "piper": lambda: _check_piper_available()}
+    "piper": lambda: _check_piper_available(),
+    "qwen3": _qwen3_requirements}
 
 
 def check_tts_requirements() -> bool:
@@ -554,7 +644,7 @@ TTS_SCHEMA = {
                 "description": (
                     "Optional TTS provider override. Accepts built-in names "
                     "(edge, openai, elevenlabs, minimax, xai, mistral, gemini, "
-                    "neutts, kittentts, piper), user-declared command provider "
+                    "neutts, kittentts, piper, qwen3), user-declared command provider "
                     "names from tts.providers.<name>, or plugin-registered names. "
                     "When omitted, the configured tts.provider from config.yaml is used."
                 )
