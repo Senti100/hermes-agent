@@ -1398,6 +1398,26 @@ class BuzzAdapter(BasePlatformAdapter):
         digest = hashlib.sha256(scope.encode("utf-8")).hexdigest()
         return self._peer_state_dir / f"peer-budgets-{digest}.json"
 
+    def _peer_budget_marker_path(self) -> Path:
+        return self._peer_budget_path().with_suffix(".initialized.json")
+
+    def _peer_budget_marker_payload(self) -> dict:
+        return {"version": 1, "identity": self._self_pubkey, "relay": self.relay_url}
+
+    def _save_peer_budget_marker(self) -> bool:
+        try:
+            from utils import atomic_json_write
+
+            atomic_json_write(
+                self._peer_budget_marker_path(), self._peer_budget_marker_payload(),
+                indent=0, mode=0o600,
+            )
+            return True
+        except Exception:
+            self._peer_budget_failed = True
+            logger.warning("Buzz: peer budget initialization marker persistence failed; peers disabled")
+            return False
+
     def _save_peer_budgets(self, data: dict) -> bool:
         try:
             from utils import atomic_json_write
@@ -1432,13 +1452,21 @@ class BuzzAdapter(BasePlatformAdapter):
             if not _normalize_user_ref(self._self_pubkey) or not self.relay_url:
                 raise ValueError("missing scope")
             path = self._peer_budget_path()
-            if path.is_symlink():
+            marker_path = self._peer_budget_marker_path()
+            if path.is_symlink() or marker_path.is_symlink():
                 raise ValueError("symlinked state")
+            marker_exists = marker_path.exists()
+            if marker_exists:
+                marker = json.loads(
+                    marker_path.read_text(encoding="utf-8"), object_pairs_hook=unique_object,
+                )
+                if marker != self._peer_budget_marker_payload():
+                    raise ValueError("invalid initialization marker")
             changed = False
             try:
                 data = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=unique_object)
             except FileNotFoundError:
-                if self._peer_budget_loaded or path.is_symlink():
+                if self._peer_budget_loaded or marker_exists or path.is_symlink():
                     raise
                 # Clock only supplies an initial replay floor, never renewal.
                 data = {
@@ -1451,6 +1479,7 @@ class BuzzAdapter(BasePlatformAdapter):
                     },
                 }
                 changed = True
+            needs_marker = not marker_exists
             if (
                 not isinstance(data, dict)
                 or set(data) != {"version", "identity", "relay", "channels"}
@@ -1479,6 +1508,11 @@ class BuzzAdapter(BasePlatformAdapter):
                 if row["remaining"] > self._peer_max_turns:
                     row["remaining"] = self._peer_max_turns
                     changed = True
+            # Persist the namespace marker before an initial grant. A crash or
+            # state-file loss may disable peers, but must never mint a new grant.
+            # Existing valid pre-marker state migrates without changing counters.
+            if needs_marker and not self._save_peer_budget_marker():
+                return None
             if changed and not self._save_peer_budgets(data):
                 return None
             self._peer_budget_loaded = True
@@ -1910,6 +1944,7 @@ class BuzzAdapter(BasePlatformAdapter):
             reply_to_text=reply_meta[1] if reply_meta else None, reply_to_author_id=reply_meta[0] if reply_meta else None,
             reply_to_is_own_message=reply_to_is_own, media_urls=[attachment.path for attachment in attachments],
             media_types=[attachment.media_type for attachment in attachments], message_type=message_type, raw_message=event,
+            allow_gateway_control=not is_peer,
         )
 
     # ── DM classification: DMs leak in via ``channels list`` as "group"; a real channel's p-tag is only addressing ──
@@ -2130,6 +2165,7 @@ class BuzzAdapter(BasePlatformAdapter):
         reply_to_author_id: Optional[str] = None, reply_to_is_own_message: bool = False,
         media_urls: Optional[List[str]] = None, media_types: Optional[List[str]] = None,
         message_type: MessageType = MessageType.TEXT, raw_message: Any = None,
+        allow_gateway_control: bool = True,
     ) -> None:
         """Build a MessageEvent and hand it to the base class handler."""
         if not self._message_handler:
@@ -2158,6 +2194,7 @@ class BuzzAdapter(BasePlatformAdapter):
             timestamp=datetime.fromtimestamp(created_at) if created_at else datetime.now(),
             reply_to_message_id=reply_to_message_id, reply_to_text=reply_to_text,
             reply_to_author_id=reply_to_author_id, reply_to_is_own_message=reply_to_is_own_message,
+            allow_gateway_control=allow_gateway_control,
         )
         await self.handle_message(event)
         # "Seen" reaction: signals the message was received and is being processed.

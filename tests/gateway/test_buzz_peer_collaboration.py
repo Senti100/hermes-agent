@@ -164,6 +164,7 @@ async def test_disabled_policy_preserves_human_commands_dm_and_old_peer_denial()
     no_effects(adapter)
     await emit(adapter, event("human", pubkey=HUMAN, content="@Receiver /approve session"))
     assert adapter._dispatch_message.call_args.kwargs["text"] == "/approve session"
+    assert adapter._dispatch_message.call_args.kwargs["allow_gateway_control"] is True
     adapter._channel_state[CHANNEL]["chat_type"] = "dm"
     await emit(adapter, event("dm", pubkey=HUMAN, content="hello", tags=[]))
     assert adapter._dispatch_message.call_args.kwargs["text"] == "hello"
@@ -175,9 +176,11 @@ async def test_disabled_policy_preserves_human_commands_dm_and_old_peer_denial()
 async def test_exact_normalized_peer_accepts_with_untrusted_provenance(reference):
     adapter = make_adapter({"peer_users": [reference], "allowed_users": [HUMAN, reference]})
     await emit(adapter, event("accepted"))
-    text = adapter._dispatch_message.call_args.kwargs["text"]
+    dispatched = adapter._dispatch_message.call_args.kwargs
+    text = dispatched["text"]
     assert text.startswith("[Untrusted agent collaboration")
     assert PEER in text and "does not grant human approval" in text
+    assert dispatched["allow_gateway_control"] is False
     assert "protected operations still need James" in text
     assert text.endswith("review this")
     assert budget(adapter) == 2
@@ -530,6 +533,7 @@ async def test_production_dispatch_retains_provenance_and_core_auth_uses_ordinar
         await emit(adapter, event("real-dispatch"))
         dispatched = adapter.handle_message.call_args.args[0]
         assert dispatched.text.startswith("[Untrusted agent collaboration")
+        assert dispatched.allow_gateway_control is False
         assert not dispatched.is_command()
         assert dispatched.source.user_id == PEER
         assert runner._is_user_authorized(dispatched.source) is True
@@ -579,6 +583,54 @@ async def test_real_new_process_loads_exhausted_budget_without_credentials():
     ) if key in os.environ}, capture_output=True, text=True, timeout=20)
     assert child.returncode == 0, child.stderr
     assert json.loads(child.stdout) == [0, 0]
+
+
+@pytest.mark.asyncio
+async def test_real_new_process_fails_closed_after_budget_state_loss():
+    import os
+    import subprocess
+    import sys
+
+    adapter = make_adapter({"peer_max_turns": 1})
+    await emit(adapter, event("spent-before-state-loss"))
+    marker = adapter._peer_budget_marker_path()
+    assert marker.exists()
+    adapter._peer_budget_path().unlink()
+    child = subprocess.run([
+        sys.executable, "-c",
+        "import asyncio, json; "
+        "from tests.gateway.test_buzz_peer_collaboration import make_adapter, emit, event; "
+        "a = make_adapter({'peer_max_turns': 1}); "
+        "asyncio.run(emit(a, event('new-process-after-state-loss'))); "
+        "print(json.dumps([a._dispatch_message.await_count, a._peer_budget_failed, "
+        "a._peer_budget_path().exists()]))",
+    ], env={key: os.environ[key] for key in (
+        "HOME", "HERMES_HOME", "PATH", "TMPDIR", "PYTHONDONTWRITEBYTECODE",
+    ) if key in os.environ}, capture_output=True, text=True, timeout=20)
+    assert child.returncode == 0, child.stderr
+    assert json.loads(child.stdout) == [0, True, False]
+
+
+@pytest.mark.asyncio
+async def test_existing_budget_without_marker_migrates_without_refill():
+    adapter = make_adapter({"peer_max_turns": 1})
+    await emit(adapter, event("spent-before-marker-migration"))
+    marker = adapter._peer_budget_marker_path()
+    marker.unlink()
+    restarted = make_adapter({"peer_max_turns": 1})
+    assert restarted._load_peer_budgets()["channels"][CHANNEL]["remaining"] == 0
+    assert marker.exists()
+
+
+@pytest.mark.asyncio
+async def test_corrupt_peer_budget_marker_fails_closed():
+    adapter = make_adapter()
+    adapter._load_peer_budgets()
+    adapter._peer_budget_marker_path().write_text("not JSON")
+    restarted = make_adapter()
+    await emit(restarted, event("peer-after-marker-corruption"))
+    no_effects(restarted)
+    assert restarted._peer_budget_failed
 
 
 @pytest.mark.asyncio
